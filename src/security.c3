@@ -276,7 +276,7 @@ fn String extract_real_ip(String header_value) {
 
     // X-Forwarded-For: client, proxy1, proxy2
     // Take the first (leftmost) IP — that's the original client
-    if (header_value.index_of_char(',')) |comma| {
+    if (try comma = header_value.index_of_char(',')) {
         return header_value[0..comma].trim();
     }
     return header_value.trim();

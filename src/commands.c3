@@ -45,7 +45,7 @@ fn void dispatch(server::Server* srv, client::Client* c, String message) {
     String cmd_name;
     String args_str = "";
 
-    if (cmd_line.index_of_char(' ')) |space| {
+    if (try space = cmd_line.index_of_char(' ')) {
         cmd_name = cmd_line[0..space];
         args_str = cmd_line[space + 1..].trim();
     } else {
@@ -263,7 +263,7 @@ fn void cmd_global(server::Server* srv, client::Client* c, String args) {
 
 fn void cmd_pm(server::Server* srv, client::Client* c, String args) {
     // /pm <uid> <message>
-    if (args.index_of_char(' ')) |space| {
+    if (try space = args.index_of_char(' ')) {
         int uid = args[0..space].to_int() ?? -1;
         String message = args[space + 1..].trim();
 
@@ -311,7 +311,7 @@ fn void cmd_roll(client::Client* c, String args) {
 
     if (args.len > 0) {
         // Parse NdM format
-        if (args.index_of_char('d')) |d_pos| {
+        if (try d_pos = args.index_of_char('d')) {
             num_dice = args[0..d_pos].to_int() ?? 1;
             num_sides = args[d_pos + 1..].to_int() ?? 6;
         }

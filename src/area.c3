@@ -336,7 +336,7 @@ fn Area[]? load_areas(String config_dir, int char_list_len) {
 
         if (idx < 0) continue;
 
-        if (trimmed.index_of_char('=')) |eq| {
+        if (try eq = trimmed.index_of_char('=')) {
             String key   = trimmed[0..eq].trim();
             String value = trimmed[eq + 1..].trim();
             if (value.len >= 2 && value[0] == '"') {

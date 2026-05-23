@@ -239,14 +239,14 @@ fn ServerConfig? load(String config_dir) {
 
         // Section header
         if (trimmed[0] == '[') {
-            if (trimmed.index_of_char(']')) |end| {
+            if (try end = trimmed.index_of_char(']')) {
                 current_section = trimmed[1..end];
             }
             continue;
         }
 
         // Key = value
-        if (trimmed.index_of_char('=')) |eq| {
+        if (try eq = trimmed.index_of_char('=')) {
             String key   = trimmed[0..eq].trim();
             String value = trimmed[eq + 1..].trim();
 
