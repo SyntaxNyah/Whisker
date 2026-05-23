@@ -305,11 +305,12 @@ fn long parse_duration(String s) {
 
     char unit = s[i];
     switch (unit) {
-        's': return value;
-        'm': return value * 60;
-        'h': return value * 3600;
-        'd': return value * 86400;
-        'w': return value * 604800;
+        case 's': return value;
+        case 'm': return value * 60;
+        case 'h': return value * 3600;
+        case 'd': return value * 86400;
+        case 'w': return value * 604800;
+        default: break;
     }
     return value;
 }

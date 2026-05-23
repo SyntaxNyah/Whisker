@@ -33,10 +33,10 @@ fn String escape_value(String raw) {
     DString result = dstring::temp();
     foreach (ch : raw) {
         switch (ch) {
-            '#':  result.append_string(config::ESCAPE_HASH);
-            '&':  result.append_string(config::ESCAPE_AMPERSAND);
-            '%':  result.append_string(config::ESCAPE_PERCENT);
-            '$':  result.append_string(config::ESCAPE_DOLLAR);
+            case '#':  result.append_string(config::ESCAPE_HASH);
+            case '&':  result.append_string(config::ESCAPE_AMPERSAND);
+            case '%':  result.append_string(config::ESCAPE_PERCENT);
+            case '$':  result.append_string(config::ESCAPE_DOLLAR);
             default: result.append_char(ch);
         }
     }
