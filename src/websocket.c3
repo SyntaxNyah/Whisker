@@ -233,7 +233,7 @@ fn void send_close(tcp::TcpSocket* socket) {
 // Each text frame contains one or more complete AO2 packets.
 fn String? read_ws_packet(tcp::TcpSocket* socket) {
     WsFrame? frame = read_frame(socket);
-    if (catch frame) return SearchResult.MISSING?;
+    if (catch frame) return SearchResult.MISSING~;
 
     switch (frame.opcode) {
         case WS_OPCODE_TEXT:
@@ -241,13 +241,13 @@ fn String? read_ws_packet(tcp::TcpSocket* socket) {
 
         case WS_OPCODE_PING:
             send_pong(socket, frame.payload);
-            return SearchResult.MISSING?;
+            return SearchResult.MISSING~;
 
         case WS_OPCODE_CLOSE:
             send_close(socket);
-            return SearchResult.MISSING?;
+            return SearchResult.MISSING~;
 
         default:
-            return SearchResult.MISSING?;
+            return SearchResult.MISSING~;
     }
 }

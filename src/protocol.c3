@@ -210,7 +210,7 @@ fn String? PacketBuffer.next_packet(&self) {
     }
 
     // No complete packet yet
-    return SearchResult.MISSING?;
+    return SearchResult.MISSING~;
 }
 
 // ============================================================
