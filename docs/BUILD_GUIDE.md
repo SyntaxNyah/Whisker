@@ -25,26 +25,30 @@ c3c --version
 You should see something like `c3c version 0.6.x`.
 
 **Linux (Debian/Ubuntu):**
-```bash
-# Check if you have wget (you probably do)
-which wget
-
-# Download the latest release
+```# Download the latest release
 wget https://github.com/c3lang/c3c/releases/latest/download/c3-linux.tar.gz
 
 # Extract it
 tar xzf c3-linux.tar.gz
 
-# Move the binary to a system-wide location
-sudo mv c3c /usr/local/bin/
+# Check where the binary is (it might be in c3/bin/c3c or directly in c3/)
+find c3 -name "c3c" -type f
+
+# Move the entire c3 directory to /opt (recommended)
+sudo mv c3 /opt/
+
+# Create a symlink to make c3c available system-wide
+sudo ln -s /opt/c3/c3c /usr/local/bin/c3c  # If binary is directly in c3/
+# OR
+sudo ln -s /opt/c3/bin/c3c /usr/local/bin/c3c  # If binary is in c3/bin/
+
+# Set the library path so c3c can find its standard library
+echo 'export C3_LIB_PATH=/opt/c3/lib' >> ~/.bashrc
+source ~/.bashrc
 
 # Verify it works
 c3c --version
-```
-
-If you don't have `wget`, use `curl` instead:
-```bash
-curl -LO https://github.com/c3lang/c3c/releases/latest/download/c3-linux.tar.gz
+# Should show: C3 Compiler Version: 0.8.x
 ```
 
 **macOS:**
