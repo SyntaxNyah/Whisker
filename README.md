@@ -123,7 +123,7 @@ src/
 - **Nyathena** — [github.com/SyntaxNyah/Nyathena](https://github.com/SyntaxNyah/Nyathena)
   Feature-rich Athena fork. Inspired persistent UID-based pairing, configurable rate limiting,
   and the moderation command structure.
-- **Ferris-AO** — [github.com/AO2-Client/Ferris-AO](https://github.com/AO2-Client/Ferris-AO)
+- **Ferris-AO** — [github.com/SyntaxNyah/Ferris-AO](https://github.com/SyntaxNyah/Ferris-AO)
   Privacy-first AO2 server in Rust. Inspired the transport abstraction, delta suppression for
   ARUP broadcasts, bounded backpressure design, and IP hashing approach.
 - **KFO-Server** (tsuserver3 fork) — [github.com/AttorneyOnline/KFO-Server](https://github.com/AttorneyOnline/KFO-Server)
