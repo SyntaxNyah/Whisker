@@ -77,7 +77,7 @@ git --version
 # If not: sudo apt install git (Linux) or download from https://git-scm.com (Windows)
 
 # Clone the repo
-git clone https://github.com/YOUR_ORG/Whisker.git
+git clone https://github.com/SyntaxNyah/Whisker.git
 
 # Enter the project folder
 cd Whisker
