@@ -14,7 +14,7 @@ import whisker::config;
 import whisker::security;
 import std::io;
 import std::net::tcp;
-import std::crypto::sha1;
+import std::hash::sha1;
 import std::encoding::base64;
 
 // ============================================================
