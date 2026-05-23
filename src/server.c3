@@ -244,7 +244,7 @@ fn void client_handler(Server* server, client::Client* c) {
         c.last_activity = security::current_time_sec();
 
         // Feed bytes to packet buffer
-        c.packet_buf.feed(((String)read_buf)[0..bytes_read]);
+        c.packet_buf.feed((String)read_buf[0..bytes_read]);
 
         // Process all complete packets in the buffer
         while (true) {

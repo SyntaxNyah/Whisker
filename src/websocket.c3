@@ -59,7 +59,7 @@ fn WsHandshakeResult? perform_handshake(
     sz? bytes = socket.read(&buf);
     if (catch bytes) return result;
 
-    String request = ((String)buf)[0..bytes];
+    String request = (String)buf[0..bytes];
 
     // Must be a GET request with Upgrade: websocket
     if (!request.starts_with("GET ")) return result;
@@ -178,7 +178,7 @@ fn WsFrame? read_frame(tcp::TcpSocket* socket) {
 
     // Read payload
     if (payload_len > 0) {
-        char[] payload_buf = mem::temp_array(char, payload_len);
+        char[] payload_buf = mem::temp_array(char, (sz)payload_len);
         usz total_read = 0;
         while (total_read < payload_len) {
             sz? n = socket.read(payload_buf[total_read..]);
@@ -194,7 +194,7 @@ fn WsFrame? read_frame(tcp::TcpSocket* socket) {
             }
         }
 
-        frame.payload = (String)payload_buf;
+        frame.payload = (String)payload_buf[0..payload_len];
     }
 
     return frame;

@@ -227,7 +227,7 @@ fn ServerConfig? load(String config_dir) {
         return cfg;
     }
 
-    String content = (String)file_data;
+    String content = (String)file_data[0..file_data.len];
     String current_section = "";
 
     // Parse line by line
@@ -351,7 +351,7 @@ fn String[]? load_lines(String path) {
         return {};
     }
 
-    String content = (String)data;
+    String content = (String)data[0..data.len];
     String[] lines = content.split(mem, "\n");
 
     // Filter empty lines

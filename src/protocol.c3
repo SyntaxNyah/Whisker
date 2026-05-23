@@ -108,7 +108,7 @@ fn Packet? parse(String raw) {
 
     String[] fields;
     if (field_count > 0) {
-        fields = mem::temp_array(String, field_count);
+        fields = mem::temp_array(String, (sz)field_count);
         for (usz i = 0; i < field_count; i++) {
             fields[i] = unescape_value(parts[i + 1]);
         }

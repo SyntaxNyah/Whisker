@@ -313,7 +313,7 @@ fn Area[]? load_areas(String config_dir, int char_list_len) {
         return default_areas;
     }
 
-    String content = (String)data;
+    String content = (String)data[0..data.len];
 
     // Count areas (each [[area]] block)
     int area_count = 0;
