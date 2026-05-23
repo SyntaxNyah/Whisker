@@ -10,7 +10,7 @@ browsers block connections from HTTPS pages to plain `ws://` servers.
 You need `wss://` (WebSocket over TLS) for webAO to work properly.
 
 **Quick workaround:** If you just want to test or play, try
-[webao.miku.pizza](https://webao.miku.pizza) — it's a fork by LemmyAO
+[webao.miku.pizza](https://webao.miku.pizza) — it's a fork by @SyntaxNyah
 that handles the HTTP/HTTPS mixed-content issue. It does the nginx
 HTTP/HTTPS trick without your browser blocking the connection. Great for
 players who struggle to connect via `web.aceattorneyonline.com` (which is
