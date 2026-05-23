@@ -208,7 +208,7 @@ fn String? PacketBuffer.next_packet(&self) {
             }
 
             // Remove processed bytes from buffer
-            self.buf.delete_range(0, i + 1);
+            self.buf.delete_range(0, i);
 
             return raw;
         }
