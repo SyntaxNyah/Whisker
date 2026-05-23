@@ -237,15 +237,16 @@ struct ClientThreadArgs {
 }
 
 fn int client_handler_thread(void* arg) {
-    @pool_init();
-    ClientThreadArgs* args = (ClientThreadArgs*)arg;
-    client_handler(args.server, args.client);
-    mem::free(args);
+    @pool_init() {
+        ClientThreadArgs* args = (ClientThreadArgs*)arg;
+        client_handler(args.server, args.client);
+        mem::free(args);
+    };
     return 0;
 }
 
 fn int ws_listener_thread(void* arg) {
-    @pool_init();
+    @pool_init() {
     Server* server = (Server*)arg;
 
     tcp::TcpServerSocket? ws_server = tcp::listen(
@@ -287,6 +288,7 @@ fn int ws_listener_thread(void* arg) {
         server.handle_new_connection(incoming, true);
     }
 
+    }; // @pool_init
     return 0;
 }
 
