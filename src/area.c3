@@ -7,6 +7,7 @@
 module whisker::area;
 
 import whisker::config;
+import whisker::protocol;
 import std::io;
 
 // ============================================================
@@ -30,8 +31,8 @@ fn String AreaStatus.to_string(AreaStatus self) {
         case RECESS:              return "RECESS";
         case RP:                  return "RP";
         case GAMING:              return "GAMING";
+        default:                  return "IDLE";
     }
-    return "IDLE";
 }
 
 fn AreaStatus from_string(String s) {
@@ -59,8 +60,8 @@ fn String LockState.to_string(LockState self) {
         case FREE:        return "FREE";
         case SPECTATABLE: return "SPECTATABLE";
         case LOCKED:      return "LOCKED";
+        default:          return "FREE";
     }
-    return "FREE";
 }
 
 // ============================================================

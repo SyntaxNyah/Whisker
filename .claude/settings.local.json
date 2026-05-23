@@ -4,7 +4,10 @@
       "WebSearch",
       "WebFetch(domain:c3-lang.org)",
       "WebFetch(domain:github.com)",
-      "WebFetch(domain:raw.githubusercontent.com)"
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "Bash(curl -s https://api.github.com/search/code?q=SearchResult+repo:c3lang/c3c+path:lib/std -H 'Accept: application/vnd.github.v3+json')",
+      "Bash(python3 -c \"import sys,json; data=json.load\\(sys.stdin\\); [print\\(item[''''path'''']\\) for item in data.get\\(''''items'''',[]\\)]\")",
+      "Bash(gh search:*)"
     ]
   }
 }

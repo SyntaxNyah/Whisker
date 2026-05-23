@@ -10,7 +10,6 @@ module whisker::security;
 import whisker::config;
 import std::time;
 import std::io;
-import std::crypto;
 
 // ============================================================
 // Rate Limiter — sliding window counter
@@ -89,13 +88,11 @@ struct IpTracker {
     int                          flood_threshold;
 }
 
-fn IpTracker new_ip_tracker(int conn_limit, int conn_window, int flood_threshold) {
-    IpTracker tracker;
-    tracker.count = 0;
-    tracker.conn_limit = conn_limit;
-    tracker.conn_window = conn_window;
-    tracker.flood_threshold = flood_threshold;
-    return tracker;
+fn void IpTracker.init(&self, int conn_limit, int conn_window, int flood_threshold) {
+    self.count = 0;
+    self.conn_limit = conn_limit;
+    self.conn_window = conn_window;
+    self.flood_threshold = flood_threshold;
 }
 
 // Check if a new connection from this IP should be allowed.
@@ -177,7 +174,7 @@ fn String generate_ipid(String raw_ip) {
     }
 
     // Format as hex string (first 10 chars)
-    return string::tformat("%010llx", hash);
+    return string::tformat("%010x", hash);
 }
 
 // ============================================================
@@ -190,7 +187,7 @@ fn String hash_hdid(String raw_hdid) {
         hash ^= (ulong)ch;
         hash *= 1099511628211;
     }
-    return string::tformat("%010llx", hash);
+    return string::tformat("%010x", hash);
 }
 
 // ============================================================
@@ -212,10 +209,8 @@ struct BanList {
     int                 count;
 }
 
-fn BanList new_ban_list() {
-    BanList bl;
-    bl.count = 0;
-    return bl;
+fn void BanList.init(&self) {
+    self.count = 0;
 }
 
 fn bool BanList.is_banned_ipid(&self, String ipid) {
@@ -287,7 +282,7 @@ fn String extract_real_ip(String header_value) {
 // ============================================================
 
 fn long current_time_sec() {
-    return (long)time::clock::now().to_seconds();
+    return (long)time::now().to_seconds();
 }
 
 // Parse a duration string like "3d", "1h", "30m", "60s" into seconds.

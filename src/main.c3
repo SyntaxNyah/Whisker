@@ -53,7 +53,7 @@ fn void main(String[] args) {
     }
 
     // Initialize and run the server
-    server::Server? srv = server::init(config_dir);
+    server::Server*? srv = server::init(config_dir);
     if (catch err = srv) {
         io::printfn("[FATAL] Failed to initialize server: %s", err);
         return;

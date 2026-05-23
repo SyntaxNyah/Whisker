@@ -87,13 +87,13 @@ fn String unescape_value(String escaped) {
 // Parse a raw packet string (without the trailing %) into a Packet.
 // Input: "HI#some_hdid" (the "#%" terminator already stripped)
 fn Packet? parse(String raw) {
-    if (raw.len == 0) return Packet{};
-    if (raw.len > config::MAX_PACKET_BYTES) return Packet{};
+    if (raw.len == 0) return (Packet){};
+    if (raw.len > config::MAX_PACKET_BYTES) return (Packet){};
 
     // Split on '#'
     String[] parts = raw.tsplit("#");
-    if (parts.len == 0) return Packet{};
-    if (parts.len > config::MAX_PACKET_FIELDS) return Packet{};
+    if (parts.len == 0) return (Packet){};
+    if (parts.len > config::MAX_PACKET_FIELDS) return (Packet){};
 
     // First part is always the header
     String header = parts[0];
@@ -108,7 +108,7 @@ fn Packet? parse(String raw) {
 
     String[] fields;
     if (field_count > 0) {
-        fields = mem::temp_new_array(String, field_count);
+        fields = mem::temp_array(String, field_count);
         for (usz i = 0; i < field_count; i++) {
             fields[i] = unescape_value(parts[i + 1]);
         }
@@ -210,7 +210,7 @@ fn String? PacketBuffer.next_packet(&self) {
     }
 
     // No complete packet yet
-    return SearchResult.MISSING~;
+    return NOT_FOUND~;
 }
 
 // ============================================================

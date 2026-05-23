@@ -71,7 +71,7 @@ struct Client {
 // ============================================================
 
 fn Client new_client(tcp::TcpSocket socket, String ip, bool is_websocket) {
-    long now = (long)time::clock::now().to_seconds();
+    long now = (long)time::now().to_seconds();
 
     return {
         .uid             = config::NO_UID,
@@ -125,7 +125,7 @@ fn Client new_client(tcp::TcpSocket socket, String ip, bool is_websocket) {
 
 fn void Client.disconnect(&self) {
     self.connected = false;
-    self.socket.close();
+    (void)self.socket.close();
     self.packet_buf.destroy();
 }
 

@@ -61,7 +61,7 @@ struct Server {
 // Server initialization
 // ============================================================
 
-fn Server? init(String config_dir) {
+fn Server*? init(String config_dir) {
     io::printn("[whisker] Loading configuration...");
     config::ServerConfig cfg = config::load(config_dir)!;
 
@@ -84,26 +84,26 @@ fn Server? init(String config_dir) {
     plugin::PluginManager plugins = plugin::new_manager();
     plugin::load_all(&plugins, cfg.plugin_directory);
 
-    return {
-        .cfg          = cfg,
-        .config_dir   = config_dir,
-        .client_count = 0,
-        .next_uid     = 0,
-        .areas        = areas,
-        .area_count   = (int)areas.len,
-        .characters   = characters,
-        .char_count   = (int)characters.len,
-        .music        = music_list,
-        .music_count  = (int)music_list.len,
-        .ip_tracker   = security::new_ip_tracker(
-            cfg.conn_rate_limit,
-            cfg.conn_rate_window_sec,
-            cfg.flood_ban_threshold
-        ),
-        .ban_list     = security::new_ban_list(),
-        .plugins      = plugins,
-        .running      = true,
-    };
+    Server* srv = mem::new(Server);
+    srv.cfg          = cfg;
+    srv.config_dir   = config_dir;
+    srv.client_count = 0;
+    srv.next_uid     = 0;
+    srv.areas        = areas;
+    srv.area_count   = (int)areas.len;
+    srv.characters   = characters;
+    srv.char_count   = (int)characters.len;
+    srv.music        = music_list;
+    srv.music_count  = (int)music_list.len;
+    srv.plugins      = plugins;
+    srv.running      = true;
+    srv.ip_tracker.init(
+        cfg.conn_rate_limit,
+        cfg.conn_rate_window_sec,
+        cfg.flood_ban_threshold
+    );
+    srv.ban_list.init();
+    return srv;
 }
 
 // ============================================================
@@ -168,7 +168,7 @@ fn void Server.handle_new_connection(&self, tcp::TcpSocket socket, bool is_webso
             io::printfn("[security] Auto-banned flooding IP: %s", ipid);
         }
 
-        socket.close();
+        (void)socket.close();
         return;
     }
 
@@ -178,7 +178,7 @@ fn void Server.handle_new_connection(&self, tcp::TcpSocket socket, bool is_webso
     if (existing >= self.cfg.multiclient_limit) {
         io::printfn("[security] Multiclient limit reached for %s (%d/%d)",
             ipid, existing, self.cfg.multiclient_limit);
-        socket.close();
+        (void)socket.close();
         return;
     }
 
@@ -196,7 +196,7 @@ fn void Server.handle_new_connection(&self, tcp::TcpSocket socket, bool is_webso
     int slot = self.add_client(c);
     if (slot < 0) {
         io::printn("[server] Server full, rejecting connection.");
-        socket.close();
+        (void)socket.close();
         mem::free(c);
         return;
     }
@@ -233,7 +233,7 @@ fn void client_handler(Server* server, client::Client* c) {
         }
 
         // Read from socket
-        usz? bytes_read = c.socket.read(&read_buf);
+        sz? bytes_read = c.socket.read(&read_buf);
         if (catch bytes_read) {
             break; // Connection error or closed
         }

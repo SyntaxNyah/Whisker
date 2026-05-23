@@ -14,6 +14,9 @@ import whisker::area;
 import whisker::pairing;
 import whisker::moderation;
 import whisker::plugin;
+import whisker::packets;
+import whisker::protocol;
+import whisker::security;
 import std::io;
 
 // ============================================================
