@@ -268,7 +268,8 @@ fn void apply_setting(ServerConfig* cfg, String section, String key, String valu
         if (key == "name")                  { cfg.server_name = value; return; }
         if (key == "description")           { cfg.server_description = value; return; }
         if (key == "motd")                  { cfg.motd = value; return; }
-        if (key == "addr")                  { cfg.bind_address = value; return; }
+        if (key == "addr" || key == "address" || key == "bind" || key == "bind_address")
+                                            { cfg.bind_address = value; return; }
         if (key == "port")                  { cfg.tcp_port = parse_ushort(value); return; }
         if (key == "max_players")           { cfg.max_players = parse_int(value); return; }
         if (key == "multiclient_limit")     { cfg.multiclient_limit = parse_int(value); return; }

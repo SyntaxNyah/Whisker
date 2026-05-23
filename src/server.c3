@@ -115,12 +115,16 @@ fn void? Server.run(&self) {
         config::SERVER_SOFTWARE, config::SERVER_VERSION);
     io::printfn("[whisker] Server: %s", self.cfg.server_name);
 
+    // Default bind address if empty
+    String bind_addr = self.cfg.bind_address;
+    if (bind_addr.len == 0) bind_addr = "0.0.0.0";
+
     // Start TCP listener
     io::printfn("[whisker] Starting TCP listener on %s:%d...",
-        self.cfg.bind_address, (int)self.cfg.tcp_port);
+        bind_addr, (int)self.cfg.tcp_port);
 
     tcp::TcpServerSocket tcp_server = tcp::listen(
-        self.cfg.bind_address,
+        bind_addr,
         self.cfg.tcp_port,
         config::DEFAULT_LISTEN_BACKLOG
     )!;
@@ -249,8 +253,11 @@ fn int ws_listener_thread(void* arg) {
     @pool_init(mem, 1024 * 256) {
     Server* server = (Server*)arg;
 
+    String ws_bind = server.cfg.bind_address;
+    if (ws_bind.len == 0) ws_bind = "0.0.0.0";
+
     tcp::TcpServerSocket? ws_server = tcp::listen(
-        server.cfg.bind_address,
+        ws_bind,
         server.cfg.ws_port,
         config::DEFAULT_LISTEN_BACKLOG
     );
