@@ -246,7 +246,7 @@ fn void BanList.add(&self, String ipid, String hdid, String reason, long duratio
     if (self.count >= MAX_BANS) return;
 
     long now = current_time_sec();
-    self.entries[self.count] = BanEntry {
+    self.entries[self.count] = {
         .ipid    = ipid,
         .hdid    = hdid,
         .reason  = reason,

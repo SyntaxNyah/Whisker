@@ -44,7 +44,7 @@ struct WsHandshakeResult {
 
 // Perform the WebSocket upgrade handshake.
 // Reads the HTTP request, validates it, and sends the 101 response.
-fn WsHandshakeResult! perform_handshake(
+fn WsHandshakeResult? perform_handshake(
     tcp::TcpSocket* socket,
     String socket_ip,
     bool reverse_proxy_mode,
@@ -56,7 +56,7 @@ fn WsHandshakeResult! perform_handshake(
 
     // Read the HTTP request (up to 4KB should be plenty)
     char[4096] buf;
-    usz! bytes = socket.read(&buf);
+    usz? bytes = socket.read(&buf);
     if (catch bytes) return result;
 
     String request = ((String)buf)[0..bytes];
@@ -143,12 +143,12 @@ struct WsFrame {
 }
 
 // Read a single WebSocket frame from the socket.
-fn WsFrame! read_frame(tcp::TcpSocket* socket) {
+fn WsFrame? read_frame(tcp::TcpSocket* socket) {
     WsFrame frame;
 
     // Read first 2 bytes (opcode + payload length indicator)
     char[2] header;
-    usz! h = socket.read(&header);
+    usz? h = socket.read(&header);
     if (catch h) return frame;
 
     frame.is_fin = (header[0] & WS_FIN_BIT) != 0;
@@ -185,7 +185,7 @@ fn WsFrame! read_frame(tcp::TcpSocket* socket) {
         char[] payload_buf = mem::temp_new_array(char, payload_len);
         usz total_read = 0;
         while (total_read < payload_len) {
-            usz! n = socket.read(payload_buf[total_read..]);
+            usz? n = socket.read(payload_buf[total_read..]);
             if (catch n) return frame;
             if (n == 0) return frame;
             total_read += n;
@@ -235,8 +235,8 @@ fn void send_close(tcp::TcpSocket* socket) {
 // WebSocket frames already provide message boundaries, so
 // we don't need the '%' delimiter parsing that TCP requires.
 // Each text frame contains one or more complete AO2 packets.
-fn String! read_ws_packet(tcp::TcpSocket* socket) {
-    WsFrame! frame = read_frame(socket);
+fn String? read_ws_packet(tcp::TcpSocket* socket) {
+    WsFrame? frame = read_frame(socket);
     if (catch frame) return SearchResult.MISSING?;
 
     switch (frame.opcode) {

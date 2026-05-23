@@ -128,7 +128,7 @@ fn void PluginAPI.register_command(
     PluginManager* pm = self.manager;
     if (pm.command_count >= MAX_PLUGIN_COMMANDS) return;
 
-    pm.commands[pm.command_count] = PluginCommand {
+    pm.commands[pm.command_count] = {
         .name = name,
         .handler = handler,
         .required_perms = required_perms,
@@ -148,7 +148,7 @@ fn void PluginAPI.register_hook(
     PluginManager* pm = self.manager;
     if (pm.hook_count >= MAX_PLUGIN_HOOKS) return;
 
-    pm.hooks[pm.hook_count] = PluginPacketHook {
+    pm.hooks[pm.hook_count] = {
         .header = header,
         .hook = hook,
         .plugin_name = plugin_name,

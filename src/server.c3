@@ -61,7 +61,7 @@ struct Server {
 // Server initialization
 // ============================================================
 
-fn Server! init(String config_dir) {
+fn Server? init(String config_dir) {
     io::printn("[whisker] Loading configuration...");
     config::ServerConfig cfg = config::load(config_dir)!;
 
@@ -84,7 +84,7 @@ fn Server! init(String config_dir) {
     plugin::PluginManager plugins = plugin::new_manager();
     plugin::load_all(&plugins, cfg.plugin_directory);
 
-    return Server {
+    return {
         .cfg          = cfg,
         .config_dir   = config_dir,
         .client_count = 0,
@@ -110,7 +110,7 @@ fn Server! init(String config_dir) {
 // Main run loop
 // ============================================================
 
-fn void! Server.run(&self) {
+fn void? Server.run(&self) {
     io::printfn("[whisker] === %s v%s ===",
         config::SERVER_SOFTWARE, config::SERVER_VERSION);
     io::printfn("[whisker] Server: %s", self.cfg.server_name);
@@ -138,7 +138,7 @@ fn void! Server.run(&self) {
 
     // Accept loop
     while (self.running) {
-        tcp::TcpSocket! incoming = tcp::accept(&tcp_server);
+        tcp::TcpSocket? incoming = tcp::accept(&tcp_server);
         if (catch incoming) {
             continue;
         }
@@ -233,7 +233,7 @@ fn void client_handler(Server* server, client::Client* c) {
         }
 
         // Read from socket
-        usz! bytes_read = c.socket.read(&read_buf);
+        usz? bytes_read = c.socket.read(&read_buf);
         if (catch bytes_read) {
             break; // Connection error or closed
         }
@@ -248,7 +248,7 @@ fn void client_handler(Server* server, client::Client* c) {
 
         // Process all complete packets in the buffer
         while (true) {
-            String! raw_packet = c.packet_buf.next_packet();
+            String? raw_packet = c.packet_buf.next_packet();
             if (catch raw_packet) break; // No more complete packets
 
             // Raw packet rate limit
@@ -260,7 +260,7 @@ fn void client_handler(Server* server, client::Client* c) {
             }
 
             // Parse the packet
-            protocol::Packet! pkt = protocol::parse(raw_packet);
+            protocol::Packet? pkt = protocol::parse(raw_packet);
             if (catch pkt) continue; // Malformed packet, skip
 
             // Let plugins intercept first

@@ -131,7 +131,7 @@ fn Area new_area(String name, int index, int char_list_len) {
     bool[] taken = mem::new_array(bool, char_list_len);
     for (usz i = 0; i < taken.len; i++) taken[i] = false;
 
-    return Area {
+    return {
         .name           = name,
         .index          = index,
         .status         = AreaStatus.IDLE,
@@ -181,7 +181,7 @@ fn void Area.release_char(&self, int char_id) {
 fn void Area.add_evidence(&self, String name, String desc, String image) {
     if (self.evidence_count >= config::MAX_EVIDENCE_PER_AREA) return;
 
-    self.evidence[self.evidence_count] = Evidence {
+    self.evidence[self.evidence_count] = {
         .name = name,
         .description = desc,
         .image = image,
@@ -301,10 +301,10 @@ fn void Area.reset(&self) {
 // Area list loading (from areas.toml)
 // ============================================================
 
-fn Area[]! load_areas(String config_dir, int char_list_len) {
+fn Area[]? load_areas(String config_dir, int char_list_len) {
     String path = string::tformat("%s/areas.toml", config_dir);
 
-    char[]! data = io::file::load(mem::heap(), path);
+    char[]? data = io::file::load(mem::heap(), path);
     if (catch data) {
         // Default: single area called "Lobby"
         Area[] default_areas = mem::new_array(Area, 1);

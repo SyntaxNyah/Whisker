@@ -174,7 +174,7 @@ struct ServerConfig {
 
 // Create a config with sane defaults — no magic numbers
 fn ServerConfig defaults() {
-    return ServerConfig {
+    return {
         .server_name          = "Whisker Server",
         .server_description   = "An Attorney Online 2 server powered by Whisker",
         .motd                 = "Welcome to the server!",
@@ -217,11 +217,11 @@ fn ServerConfig defaults() {
 // Handles: [section], key = "string", key = 123, key = true
 // ============================================================
 
-fn ServerConfig! load(String config_dir) {
+fn ServerConfig? load(String config_dir) {
     String path = string::tformat("%s/config.toml", config_dir);
     ServerConfig cfg = defaults();
 
-    char[]! file_data = io::file::load(mem::heap(), path);
+    char[]? file_data = io::file::load(mem::heap(), path);
     if (catch file_data) {
         io::printfn("[config] No config.toml found at '%s', using defaults.", path);
         return cfg;
@@ -345,8 +345,8 @@ fn bool parse_bool(String s) {
 // Asset list loaders
 // ============================================================
 
-fn String[]! load_lines(String path) {
-    char[]! data = io::file::load(mem::heap(), path);
+fn String[]? load_lines(String path) {
+    char[]? data = io::file::load(mem::heap(), path);
     if (catch data) {
         io::printfn("[config] Could not load '%s'", path);
         return {};
@@ -374,14 +374,14 @@ fn String[]! load_lines(String path) {
     return result;
 }
 
-fn String[]! load_characters(String config_dir) {
+fn String[]? load_characters(String config_dir) {
     return load_lines(string::tformat("%s/characters.txt", config_dir));
 }
 
-fn String[]! load_music(String config_dir) {
+fn String[]? load_music(String config_dir) {
     return load_lines(string::tformat("%s/music.txt", config_dir));
 }
 
-fn String[]! load_backgrounds(String config_dir) {
+fn String[]? load_backgrounds(String config_dir) {
     return load_lines(string::tformat("%s/backgrounds.txt", config_dir));
 }

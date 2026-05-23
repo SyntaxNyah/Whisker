@@ -73,7 +73,7 @@ struct Client {
 fn Client new_client(tcp::TcpSocket socket, String ip, bool is_websocket) {
     long now = (long)time::clock::now().to_seconds();
 
-    return Client {
+    return {
         .uid             = config::NO_UID,
         .socket          = socket,
         .is_websocket    = is_websocket,

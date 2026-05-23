@@ -86,7 +86,7 @@ fn String unescape_value(String escaped) {
 
 // Parse a raw packet string (without the trailing %) into a Packet.
 // Input: "HI#some_hdid" (the "#%" terminator already stripped)
-fn Packet! parse(String raw) {
+fn Packet? parse(String raw) {
     if (raw.len == 0) return Packet{};
     if (raw.len > config::MAX_PACKET_BYTES) return Packet{};
 
@@ -114,7 +114,7 @@ fn Packet! parse(String raw) {
         }
     }
 
-    return Packet {
+    return {
         .header      = header,
         .fields      = fields,
         .field_count = field_count,
@@ -172,7 +172,7 @@ struct PacketBuffer {
 }
 
 fn PacketBuffer new_buffer() {
-    return PacketBuffer {
+    return {
         .buf = dstring::new(mem::heap(), ""),
     };
 }
@@ -188,7 +188,7 @@ fn void PacketBuffer.feed(&self, String data) {
 
 // Extract the next complete packet from the buffer, if any.
 // Returns the raw packet string (without the trailing '%').
-fn String! PacketBuffer.next_packet(&self) {
+fn String? PacketBuffer.next_packet(&self) {
     String view = self.buf.str_view();
 
     // Find the '%' terminator
