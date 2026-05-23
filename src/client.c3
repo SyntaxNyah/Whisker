@@ -225,6 +225,6 @@ fn void websocket_send_text(tcp::TcpSocket* socket, String data) {
         header_len = 10;
     }
 
-    if (catch socket.write(header_buf[0..header_len])) return;
+    if (catch socket.write(header_buf[0..header_len - 1])) return;
     if (catch socket.write(data)) return;
 }

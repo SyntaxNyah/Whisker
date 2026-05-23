@@ -227,7 +227,7 @@ fn ServerConfig? load(String config_dir) {
         return cfg;
     }
 
-    String content = (String)file_data[0..file_data.len];
+    String content = (String)file_data[0..file_data.len - 1];
     String current_section = "";
 
     // Parse line by line
@@ -240,19 +240,19 @@ fn ServerConfig? load(String config_dir) {
         // Section header
         if (trimmed[0] == '[') {
             if (try end = trimmed.index_of_char(']')) {
-                current_section = trimmed[1..end];
+                current_section = trimmed[1..end - 1];
             }
             continue;
         }
 
         // Key = value
         if (try eq = trimmed.index_of_char('=')) {
-            String key   = trimmed[0..eq].trim();
+            String key   = trimmed[0..eq - 1].trim();
             String value = trimmed[eq + 1..].trim();
 
             // Strip quotes from string values
             if (value.len >= 2 && value[0] == '"') {
-                value = value[1..value.len - 1];
+                value = value[1..value.len - 2];
             }
 
             apply_setting(&cfg, current_section, key, value);
@@ -351,7 +351,7 @@ fn String[]? load_lines(String path) {
         return {};
     }
 
-    String content = (String)data[0..data.len];
+    String content = (String)data[0..data.len - 1];
     String[] lines = content.split(mem, "\n");
 
     // Filter empty lines

@@ -313,7 +313,7 @@ fn Area[]? load_areas(String config_dir, int char_list_len) {
         return default_areas;
     }
 
-    String content = (String)data[0..data.len];
+    String content = (String)data[0..data.len - 1];
 
     // Count areas (each [[area]] block)
     int area_count = 0;
@@ -338,10 +338,10 @@ fn Area[]? load_areas(String config_dir, int char_list_len) {
         if (idx < 0) continue;
 
         if (try eq = trimmed.index_of_char('=')) {
-            String key   = trimmed[0..eq].trim();
+            String key   = trimmed[0..eq - 1].trim();
             String value = trimmed[eq + 1..].trim();
             if (value.len >= 2 && value[0] == '"') {
-                value = value[1..value.len - 1];
+                value = value[1..value.len - 2];
             }
 
             if (key == "name")       areas[idx].name = value;

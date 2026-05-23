@@ -195,11 +195,16 @@ fn String? PacketBuffer.next_packet(&self) {
     foreach (i, ch : view) {
         if (ch == config::PACKET_END_CHAR) {
             // Extract everything before '%'
-            String raw = view[0..i];
+            String raw = "";
+            if (i > 0) {
+                raw = view[0..i - 1];
+            }
 
             // Strip trailing '#' if present (the "#%" terminator)
-            if (raw.len > 0 && raw[raw.len - 1] == config::FIELD_SEPARATOR) {
-                raw = raw[0..raw.len - 1];
+            if (raw.len > 1 && raw[raw.len - 1] == config::FIELD_SEPARATOR) {
+                raw = raw[0..raw.len - 2];
+            } else if (raw.len == 1 && raw[0] == config::FIELD_SEPARATOR) {
+                raw = "";
             }
 
             // Remove processed bytes from buffer

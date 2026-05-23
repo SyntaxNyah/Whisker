@@ -29,7 +29,7 @@ const String DEFAULT_MOD_PASSWORD = "changeme";
 fn void cmd_login(server::Server* srv, client::Client* c, String args) {
     // /login <username> <password>
     if (try space = args.index_of_char(' ')) {
-        String username = args[0..space];
+        String username = args[0..space - 1];
         String password = args[space + 1..].trim();
 
         // TODO: Check against account database

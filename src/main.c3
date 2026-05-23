@@ -87,8 +87,8 @@ fn String resolve_config_dir(String[] args) {
             }
         }
 
-        if (last_sep >= 0) {
-            String exe_dir = exe[0..(usz)last_sep];
+        if (last_sep > 0) {
+            String exe_dir = exe[0..(usz)(last_sep - 1)];
 
             // Try config/ next to the executable
             String candidate = string::tformat("%s/config", exe_dir);

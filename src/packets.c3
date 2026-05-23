@@ -250,7 +250,7 @@ fn void handle_ms(server::Server* srv, client::Client* c, protocol::Packet* pkt)
     // Message length check
     String message = pkt.fields[4];
     if (message.len > config::MAX_IC_MESSAGE_LEN) {
-        message = message[0..config::MAX_IC_MESSAGE_LEN];
+        message = message[0..config::MAX_IC_MESSAGE_LEN - 1];
     }
 
     // === Pairing logic ===
@@ -437,7 +437,7 @@ fn void handle_de(server::Server* srv, client::Client* c, protocol::Packet* pkt)
 // RT: Judge animation
 fn void handle_rt(server::Server* srv, client::Client* c, protocol::Packet* pkt) {
     if (pkt.field_count < 1) return;
-    server::broadcast_area(srv, c.area_id, protocol::build("RT", pkt.fields[0..pkt.field_count]));
+    server::broadcast_area(srv, c.area_id, protocol::build("RT", pkt.fields[0..pkt.field_count - 1]));
 }
 
 // ZZ: Modcall
@@ -468,7 +468,7 @@ fn void handle_zz(server::Server* srv, client::Client* c, protocol::Packet* pkt)
 fn void handle_casea(server::Server* srv, client::Client* c, protocol::Packet* pkt) {
     if (pkt.field_count < 6) return;
     // Broadcast to all connected clients
-    server::broadcast(srv, protocol::build("CASEA", pkt.fields[0..pkt.field_count]));
+    server::broadcast(srv, protocol::build("CASEA", pkt.fields[0..pkt.field_count - 1]));
 }
 
 // ============================================================
