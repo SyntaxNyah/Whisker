@@ -139,13 +139,15 @@ struct WsFrame {
 }
 
 // Read a single WebSocket frame from the socket.
+// Returns a fault on connection error or invalid data.
 fn WsFrame? read_frame(tcp::TcpSocket* socket) {
     WsFrame frame;
 
     // Read first 2 bytes (opcode + payload length indicator)
     char[2] header;
     sz? h = socket.read(&header);
-    if (catch h) return frame;
+    if (catch h) return NOT_FOUND~;
+    if (h == 0) return NOT_FOUND~;
 
     frame.is_fin = (header[0] & WS_FIN_BIT) != 0;
     frame.opcode = header[0] & 0x0F;
@@ -156,11 +158,11 @@ fn WsFrame? read_frame(tcp::TcpSocket* socket) {
 
     if (payload_len == 126) {
         char[2] len_buf;
-        if (catch socket.read(&len_buf)) return frame;
+        if (catch socket.read(&len_buf)) return NOT_FOUND~;
         payload_len = ((usz)len_buf[0] << 8) | (usz)len_buf[1];
     } else if (payload_len == 127) {
         char[8] len_buf;
-        if (catch socket.read(&len_buf)) return frame;
+        if (catch socket.read(&len_buf)) return NOT_FOUND~;
         payload_len = 0;
         for (int i = 0; i < 8; i++) {
             payload_len = (payload_len << 8) | (usz)len_buf[i];
@@ -168,12 +170,12 @@ fn WsFrame? read_frame(tcp::TcpSocket* socket) {
     }
 
     // Enforce max frame size
-    if (payload_len > config::WS_MAX_FRAME_SIZE) return frame;
+    if (payload_len > config::WS_MAX_FRAME_SIZE) return NOT_FOUND~;
 
     // Read masking key (client → server frames are always masked)
     char[4] mask_key;
     if (frame.is_masked) {
-        if (catch socket.read(&mask_key)) return frame;
+        if (catch socket.read(&mask_key)) return NOT_FOUND~;
     }
 
     // Read payload
@@ -182,8 +184,8 @@ fn WsFrame? read_frame(tcp::TcpSocket* socket) {
         usz total_read = 0;
         while (total_read < payload_len) {
             sz? n = socket.read(payload_buf[total_read..]);
-            if (catch n) return frame;
-            if (n == 0) return frame;
+            if (catch n) return NOT_FOUND~;
+            if (n == 0) return NOT_FOUND~;
             total_read += (usz)n;
         }
 

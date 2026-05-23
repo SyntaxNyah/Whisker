@@ -316,19 +316,36 @@ fn void client_handler(Server* server, client::Client* c) {
             break;
         }
 
-        // Read from socket
-        sz? bytes_read = c.socket.read(&read_buf);
-        if (catch bytes_read) {
-            break; // Connection error or closed
-        }
-        if (bytes_read == 0) {
-            break; // Client disconnected
-        }
+        if (c.is_websocket) {
+            // WebSocket: read frames and extract payload
+            websocket::WsFrame? frame = websocket::read_frame(&c.socket);
+            if (catch frame) break; // Connection error
 
-        c.last_activity = security::current_time_sec();
+            if (frame.opcode == websocket::WS_OPCODE_PING) {
+                websocket::send_pong(&c.socket, frame.payload);
+                continue;
+            }
+            if (frame.opcode == websocket::WS_OPCODE_CLOSE) {
+                websocket::send_close(&c.socket);
+                break;
+            }
+            if (frame.opcode != websocket::WS_OPCODE_TEXT) {
+                continue; // Ignore binary/continuation frames
+            }
 
-        // Feed bytes to packet buffer
-        c.packet_buf.feed((String)read_buf[0..bytes_read - 1]);
+            c.last_activity = security::current_time_sec();
+
+            // WebSocket text payload contains AO2 packets (with #% terminators)
+            c.packet_buf.feed(frame.payload);
+        } else {
+            // TCP: read raw bytes
+            sz? bytes_read = c.socket.read(&read_buf);
+            if (catch bytes_read) break;
+            if (bytes_read == 0) break;
+
+            c.last_activity = security::current_time_sec();
+            c.packet_buf.feed((String)read_buf[0..bytes_read - 1]);
+        }
 
         // Process all complete packets in the buffer
         while (true) {
@@ -345,7 +362,13 @@ fn void client_handler(Server* server, client::Client* c) {
 
             // Parse the packet
             protocol::Packet? pkt = protocol::parse(raw_packet);
-            if (catch pkt) continue; // Malformed packet, skip
+            if (catch pkt) {
+                io::printfn("[debug] Malformed packet from %s", c.ipid);
+                continue;
+            }
+
+            io::printfn("[debug] Packet from %s: %s (fields: %d)",
+                c.ipid, pkt.header, (int)pkt.field_count);
 
             // Let plugins intercept first
             if (plugin::on_packet(&server.plugins, c, &pkt)) {
