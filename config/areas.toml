@@ -1,0 +1,18 @@
+# Whisker Area Configuration
+# Each [[area]] block defines one area (room) on the server.
+
+[[area]]
+name = "Lobby"
+background = "gs4"
+
+[[area]]
+name = "Courtroom"
+background = "gs4"
+
+[[area]]
+name = "Defendant Lobby"
+background = "gs4"
+
+[[area]]
+name = "Prosecutor Lobby"
+background = "gs4"

@@ -1,0 +1,25 @@
+# Whisker Role Configuration
+# Permission bits are combined as a bitfield.
+#
+# Available permissions:
+#   MUTE        = 1    (mute/unmute, punishments)
+#   KICK        = 2    (kick players)
+#   BAN         = 4    (ban/unban)
+#   MOVE_USERS  = 8    (forcemove, summon)
+#   MODIFY_AREA = 16   (lock BG/music, area settings)
+#   BAN_INFO    = 32   (view ban records)
+#   ADMIN       = 64   (full server control)
+#   SHADOW      = 128  (hidden from player lists)
+#   DJ          = 256  (music/bg permissions)
+
+[[role]]
+name = "moderator"
+permissions = 39  # MUTE + KICK + BAN + MOVE_USERS
+
+[[role]]
+name = "admin"
+permissions = 127  # All except SHADOW and DJ
+
+[[role]]
+name = "dj"
+permissions = 256  # DJ only

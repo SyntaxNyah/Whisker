@@ -1,0 +1,15 @@
+{
+    "version": "0.1.0",
+    "authors": ["Whisker Contributors"],
+    "langrev": "1",
+    "warnings": ["no-unused"],
+    "sources": ["src/**"],
+    "dependencies": [],
+    "targets": {
+        "whisker": {
+            "type": "executable",
+            "opt": "O2",
+            "safe": true
+        }
+    }
+}

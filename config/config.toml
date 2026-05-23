@@ -1,0 +1,78 @@
+# Whisker AO2 Server Configuration
+# All settings have sane defaults — only change what you need.
+
+[server]
+name = "My Whisker Server"
+description = "An Attorney Online 2 server powered by Whisker"
+motd = "Welcome! Type /help for commands."
+addr = ""
+port = 27016
+max_players = 100
+multiclient_limit = 16
+asset_url = ""
+default_ban_duration = "3d"
+
+[websocket]
+# Plain WebSocket for webAO (ws://)
+enable_ws = true
+ws_port = 27017
+
+# Secure WebSocket (wss://)
+# Option 1: Direct TLS (provide cert/key paths)
+# Option 2: Reverse proxy (Cloudflare/nginx handles TLS, leave paths empty)
+enable_wss = false
+wss_port = 443
+tls_cert_path = ""
+tls_key_path = ""
+allowed_origin = "*"
+
+# For Cloudflare Tunnel / nginx reverse proxy setup:
+# 1. Set enable_ws = true, ws_port to your internal port (e.g., 27017)
+# 2. Point your reverse proxy to ws://localhost:27017
+# 3. The proxy terminates TLS and forwards plain WS to Whisker
+# 4. Enable reverse_proxy_mode in [proxy] to extract real IPs
+# 5. Cloudflare tunnel: set type=HTTP, URL=localhost:27017
+
+[ratelimit]
+# IC/OOC/music message rate limit
+msg_rate_limit = 20
+msg_rate_window = 10
+
+# OOC-specific rate limit (tighter)
+ooc_rate_limit = 4
+ooc_rate_window = 1
+
+# Per-IP connection rate limit
+conn_rate_limit = 10
+conn_rate_window = 10
+
+# Raw AO2 packet rate limit (all packets)
+raw_pkt_rate_limit = 20
+raw_pkt_rate_window = 2
+
+# Auto-ban IPs that flood connections
+conn_flood_autoban = true
+flood_ban_threshold = 6
+
+[proxy]
+# Enable when behind a reverse proxy (Cloudflare, nginx, etc.)
+# This extracts the real client IP from proxy headers.
+reverse_proxy_mode = false
+
+# Which header to trust for the real IP.
+# Cloudflare: CF-Connecting-IP (also X-Forwarded-For)
+# nginx: X-Forwarded-For or X-Real-IP
+# All three are checked automatically when reverse_proxy_mode = true.
+trusted_header = "X-Forwarded-For"
+
+[moderation]
+automod_enabled = false
+automod_wordlist = "config/banned_words.txt"
+automod_action = "kick"
+
+[logging]
+enable_area_logging = false
+log_directory = "logs"
+
+[plugins]
+directory = "plugins"
