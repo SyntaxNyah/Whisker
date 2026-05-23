@@ -304,7 +304,7 @@ fn void Area.reset(&self) {
 fn Area[]? load_areas(String config_dir, int char_list_len) {
     String path = string::tformat("%s/areas.toml", config_dir);
 
-    char[]? data = io::file::load(mem::heap(), path);
+    char[]? data = io::file::load(mem, path);
     if (catch data) {
         // Default: single area called "Lobby"
         Area[] default_areas = mem::new_array(Area, 1);

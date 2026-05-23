@@ -173,7 +173,7 @@ struct PacketBuffer {
 
 fn PacketBuffer new_buffer() {
     return {
-        .buf = dstring::new(mem::heap(), ""),
+        .buf = dstring::new(mem, ""),
     };
 }
 

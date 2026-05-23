@@ -221,7 +221,7 @@ fn ServerConfig? load(String config_dir) {
     String path = string::tformat("%s/config.toml", config_dir);
     ServerConfig cfg = defaults();
 
-    char[]? file_data = io::file::load(mem::heap(), path);
+    char[]? file_data = io::file::load(mem, path);
     if (catch file_data) {
         io::printfn("[config] No config.toml found at '%s', using defaults.", path);
         return cfg;
@@ -327,8 +327,7 @@ fn void apply_setting(ServerConfig* cfg, String section, String key, String valu
 }
 
 fn int parse_int(String s) {
-    if (catch result = s.to_int()) return 0;
-    return result;
+    return s.to_int() ?? 0;
 }
 
 fn ushort parse_ushort(String s) {
@@ -346,14 +345,14 @@ fn bool parse_bool(String s) {
 // ============================================================
 
 fn String[]? load_lines(String path) {
-    char[]? data = io::file::load(mem::heap(), path);
+    char[]? data = io::file::load(mem, path);
     if (catch data) {
         io::printfn("[config] Could not load '%s'", path);
         return {};
     }
 
     String content = (String)data;
-    String[] lines = content.split(mem::heap(), "\n");
+    String[] lines = content.split(mem, "\n");
 
     // Filter empty lines
     int count = 0;
