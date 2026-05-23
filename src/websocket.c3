@@ -115,11 +115,7 @@ fn WsHandshakeResult? perform_handshake(
 
     // Build HTTP 101 response
     String response = string::tformat(
-        "HTTP/1.1 101 Switching Protocols\r\n" ~
-        "Upgrade: websocket\r\n" ~
-        "Connection: Upgrade\r\n" ~
-        "Sec-WebSocket-Accept: %s\r\n" ~
-        "\r\n",
+        "HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: %s\r\n\r\n",
         accept_key
     );
 
