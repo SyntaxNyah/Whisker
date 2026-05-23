@@ -111,7 +111,7 @@ fn WsHandshakeResult? perform_handshake(
     sha_hash = hasher.final();
 
     // Base64 encode
-    String accept_key = base64::encode(mem::temp(), &sha_hash);
+    String accept_key = base64::encode(tmem, &sha_hash);
 
     // Build HTTP 101 response
     String response = string::tformat(
@@ -184,7 +184,7 @@ fn WsFrame? read_frame(tcp::TcpSocket* socket) {
             sz? n = socket.read(payload_buf[total_read..]);
             if (catch n) return frame;
             if (n == 0) return frame;
-            total_read += n;
+            total_read += (usz)n;
         }
 
         // Unmask
