@@ -22,6 +22,7 @@ c3c build
 # Custom config directory
 ./build/whisker -c /path/to/config
 ```
+Note: This is just if you want to run a config file that's not in the default directory. For full build guide see here: https://github.com/SyntaxNyah/Whisker/blob/main/docs/BUILD_GUIDE.md
 
 ## Configuration
 
