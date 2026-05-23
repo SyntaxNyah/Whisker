@@ -128,9 +128,13 @@ fn void? Server.run(&self) {
     io::printfn("[whisker] TCP listening on port %d", (int)self.cfg.tcp_port);
 
     if (self.cfg.enable_ws) {
-        io::printfn("[whisker] WebSocket enabled on port %d", (int)self.cfg.ws_port);
-        // WebSocket listener runs in a separate thread
-        // (see websocket.c3 for the WS accept loop)
+        // Start WebSocket listener in a separate thread
+        Thread ws_thread;
+        if (catch ws_thread.create(&ws_listener_thread, self)) {
+            io::printn("[websocket] WARNING: Failed to start WebSocket listener thread");
+        } else {
+            (void)ws_thread.detach();
+        }
     }
 
     io::printn("[whisker] Server is ready. Accepting connections.");
@@ -207,12 +211,81 @@ fn void Server.handle_new_connection(&self, tcp::TcpSocket socket, bool is_webso
     // Send the decryptor (tells client: no FantaCrypt encryption)
     c.send_raw(config::DECRYPTOR_PACKET);
 
-    // Start client handler (in the main thread for now)
-    // In a full implementation, this would spawn a thread:
-    //   Thread t;
-    //   t.create(&client_handler_thread, c);
-    //   t.detach();
-    client_handler(self, c);
+    // Spawn a thread to handle this client
+    ClientThreadArgs* args = mem::new(ClientThreadArgs);
+    args.server = self;
+    args.client = c;
+    Thread t;
+    if (catch t.create(&client_handler_thread, args)) {
+        io::printn("[server] Failed to create handler thread");
+        self.remove_client(c);
+        c.disconnect();
+        mem::free(c);
+        mem::free(args);
+        return;
+    }
+    (void)t.detach();
+}
+
+// ============================================================
+// Thread helpers
+// ============================================================
+
+struct ClientThreadArgs {
+    Server* server;
+    client::Client* client;
+}
+
+fn int client_handler_thread(void* arg) {
+    ClientThreadArgs* args = (ClientThreadArgs*)arg;
+    client_handler(args.server, args.client);
+    mem::free(args);
+    return 0;
+}
+
+fn int ws_listener_thread(void* arg) {
+    Server* server = (Server*)arg;
+
+    tcp::TcpServerSocket? ws_server = tcp::listen(
+        server.cfg.bind_address,
+        server.cfg.ws_port,
+        config::DEFAULT_LISTEN_BACKLOG
+    );
+    if (catch ws_server) {
+        io::printfn("[websocket] Failed to bind WebSocket listener on port %d",
+            (int)server.cfg.ws_port);
+        return 1;
+    }
+
+    io::printfn("[websocket] WebSocket listening on port %d", (int)server.cfg.ws_port);
+
+    while (server.running) {
+        tcp::TcpSocket? incoming = tcp::accept(&ws_server);
+        if (catch incoming) continue;
+
+        // Perform WebSocket handshake
+        String ip = "unknown";
+        websocket::WsHandshakeResult? hs = websocket::perform_handshake(
+            &incoming, ip,
+            server.cfg.reverse_proxy_mode,
+            server.cfg.trusted_proxy_header
+        );
+
+        if (catch hs) {
+            (void)incoming.close();
+            continue;
+        }
+
+        if (!hs.success) {
+            (void)incoming.close();
+            continue;
+        }
+
+        // Use real IP from handshake if available
+        server.handle_new_connection(incoming, true);
+    }
+
+    return 0;
 }
 
 // ============================================================
