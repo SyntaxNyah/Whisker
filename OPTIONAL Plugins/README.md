@@ -1,16 +1,14 @@
 # Optional Plugins
 
-This folder contains **free, pre-built plugins** that add extra features to your Whisker server. They are completely optional -- your server works fine without them.
+This folder contains **ready-to-use plugins** that add extra features to your Whisker server. They are completely optional -- your server works fine without them. Each plugin is already built and just needs to be dropped into your `plugins/` folder.
 
 ## How to Use
 
 **To install a plugin:**
 
-1. Copy the plugin's `.c3` source file into your own C3 project
-2. Build it as a dynamic library (`c3c build` with `"type": "dynamic-lib"` in your `project.json`)
-3. Copy the resulting `.so` (Linux) or `.dll` (Windows) file into your server's `plugins/` directory
-4. Edit `config/config.toml` if the plugin requires configuration (check the plugin's section below)
-5. Restart your server
+1. Drag the plugin's `.so` (Linux) or `.dll` (Windows) file into your server's `plugins/` directory
+2. Edit `config/config.toml` if the plugin requires configuration (check the plugin's section below)
+3. Restart your server
 
 **To remove a plugin:**
 
@@ -32,7 +30,7 @@ Advertises your server to the Attorney Online master server so players can find 
 
 **Setup:**
 
-1. Build and deploy the plugin (see above)
+1. Drop the compiled plugin into your `plugins/` directory
 2. Add the following to your `config/config.toml`:
 
 ```toml

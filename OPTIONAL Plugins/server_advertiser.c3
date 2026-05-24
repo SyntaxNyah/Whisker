@@ -23,7 +23,6 @@ import whisker::plugin;
 import whisker::config;
 import whisker::client;
 import std::io;
-import std::net;
 import std::thread;
 import std::time;
 
@@ -146,8 +145,7 @@ fn void send_heartbeat() {
     // The master server uses the source IP of the request as the
     // server's IP address, so you don't need to send it explicitly.
 
-    // Build a simple form-encoded body
-    // (Adjust format if the master server expects JSON instead)
+    // Build a form-encoded body for the master server
     DString body = dstring::temp();
     body.append_string("port=");
     body.append_string(string::tformat("%d", state.server_port));
@@ -164,16 +162,6 @@ fn void send_heartbeat() {
         body.append_string(string::tformat("%d", state.ws_port));
     }
 
-    // Send HTTP POST
-    // NOTE: This is a simplified HTTP client. C3's standard library
-    // network support varies by version. You may need to adapt this
-    // to use whatever HTTP client is available in your C3 build.
-    //
-    // For a minimal implementation, you can also shell out:
-    //   std::process::run("curl", { "-s", "-X", "POST", "-d", body, url });
-    //
-    // Or use C3's built-in net module if available.
-
     if (post_to_url(state.masterserver_url, body.str_view())) {
         io::printn("[advertiser] Heartbeat sent successfully.");
     } else {
@@ -182,44 +170,25 @@ fn void send_heartbeat() {
 }
 
 // ============================================================
-// Minimal HTTP POST helper
+// HTTP POST via curl
 // ============================================================
 
+// C's system() — available everywhere, lets us shell out to curl.
+extern fn CInt system(char* cmd) @extern("system");
+
 fn bool post_to_url(String url, String body) {
-    // Parse the URL to extract host and path.
+    // Shell out to curl for HTTPS support.
+    // curl ships with Windows 10+, Linux, and macOS.
     //
-    // This is a simplified implementation. For production use,
-    // consider using a proper HTTP library or shelling out to curl.
-    //
-    // The implementation below handles the common case:
-    //   https://servers.aceattorneyonline.com/servers
-    //         ^host                          ^path
-
-    // For now, log what we would send.
-    // Replace this with actual HTTP POST when C3's net module
-    // supports it, or use the curl fallback above.
-    io::printfn("[advertiser] POST %s (%d bytes)", url, body.len);
-
-    // TODO: Implement actual HTTP POST. Options:
-    //
-    // Option A: Use C3's built-in TCP + manual HTTP
-    //   1. Parse URL into host, port, path
-    //   2. Open TCP connection to host:443
-    //   3. Send HTTP POST request with Content-Type: application/x-www-form-urlencoded
-    //   4. Read response, check for 200 OK
-    //
-    // Option B: Shell out to curl (simplest, works everywhere)
-    //   std::process::run("curl", {
-    //       "-s", "-X", "POST",
-    //       "-H", "Content-Type: application/x-www-form-urlencoded",
-    //       "-d", body,
-    //       url
-    //   });
-    //
-    // Option C: Link against libcurl via C3's C interop
-    //   import libc_curl;  // Write a C3 wrapper for libcurl
-
-    return true; // Placeholder — replace with real implementation
+    // Flags:
+    //   -s           silent (no progress bar)
+    //   -f           fail silently on HTTP errors (non-zero exit code)
+    //   --max-time   timeout after 10 seconds so we don't hang the thread
+    String cmd = string::tformat(
+        `curl -sf --max-time 10 -X POST -H "Content-Type: application/x-www-form-urlencoded" -d "%s" "%s"`,
+        body, url
+    );
+    return system(cmd.ptr) == 0;
 }
 
 // ============================================================
