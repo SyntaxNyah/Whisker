@@ -29,6 +29,7 @@ import std::thread;
 extern fn int getpeername(int sock, void* addr, int* addrlen);
 extern fn int setsockopt(int sock, int level, int optname, void* optval, int optlen);
 extern fn long c_send(int sock, char* buf, usz len, int flags) @cname("send");
+extern fn long c_recv(int sock, char* buf, usz len, int flags) @cname("recv");
 
 const int SOL_TCP     = 6;
 const int TCP_NODELAY = 1;
@@ -401,16 +402,14 @@ fn void client_handler(Server* server, client::Client* c) {
             // WebSocket text payload contains AO2 packets (with #% terminators)
             c.packet_buf.feed(frame.payload);
         } else {
-            // TCP: read raw bytes
-            sz? bytes_read = c.socket.read(&read_buf);
-            if (catch bytes_read) {
-                io::printfn("[debug] Socket read ERROR for %s (fd=%d)", c.ipid, get_raw_fd(&c.socket));
+            // TCP: read raw bytes via C recv() directly
+            int rfd = get_raw_fd(&c.socket);
+            long n = c_recv(rfd, &read_buf[0], 4096, 0);
+            if (n <= 0) {
+                io::printfn("[debug] recv returned %d for %s (fd=%d)", (int)n, c.ipid, rfd);
                 break;
             }
-            if (bytes_read == 0) {
-                io::printfn("[debug] Socket read returned 0 for %s (client disconnected)", c.ipid);
-                break;
-            }
+            sz bytes_read = (sz)n;
 
             c.last_activity = security::current_time_sec();
             c.packet_buf.feed((String)read_buf[0..bytes_read - 1]);
