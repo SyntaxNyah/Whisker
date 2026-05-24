@@ -1,0 +1,10 @@
+# Whisker moderator accounts
+# Managed via server console. Do not edit while server is running.
+# Format: username:password:role
+#
+# Create accounts from the server console:
+#   addmod <username> <password> [role]
+#
+# Available roles are defined in roles.toml.
+# If no accounts are listed here, the server falls back to
+# the legacy single-password auth in moderation.c3.

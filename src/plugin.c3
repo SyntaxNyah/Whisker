@@ -33,6 +33,43 @@ import whisker::protocol;
 import std::io;
 
 // ============================================================
+// C interop — shared library loading (platform-conditional)
+// ============================================================
+
+// Shared library loading
+$if env::os == WIN32:
+    extern fn void* LoadLibraryA(char* path) @extern("LoadLibraryA");
+    extern fn void* GetProcAddress(void* module, char* name) @extern("GetProcAddress");
+    extern fn int FreeLibrary(void* module) @extern("FreeLibrary");
+$else
+    extern fn void* dlopen(char* path, int flags) @extern("dlopen");
+    extern fn void* dlsym(void* handle, char* name) @extern("dlsym");
+    extern fn int dlclose(void* handle) @extern("dlclose");
+    extern fn char* dlerror() @extern("dlerror");
+
+    const int RTLD_NOW = 2;
+$endif
+
+// Directory scanning via shell command
+$if env::os == WIN32:
+    extern fn void* _popen(char* cmd, char* mode) @extern("_popen");
+    extern fn int _pclose(void* stream) @extern("_pclose");
+$else
+    extern fn void* popen(char* cmd, char* mode) @extern("popen");
+    extern fn int pclose(void* stream) @extern("pclose");
+$endif
+
+extern fn char* fgets(char* buf, int n, void* stream) @extern("fgets");
+
+// ============================================================
+// Plugin export function pointer types
+// ============================================================
+
+alias PluginInfoFn     = fn PluginInfo();
+alias PluginInitFn     = fn void(PluginAPI*);
+alias PluginShutdownFn = fn void();
+
+// ============================================================
 // Plugin info — what the plugin tells us about itself
 // ============================================================
 
@@ -187,6 +224,10 @@ struct PluginManager {
 
     PluginPacketHook[MAX_PLUGIN_HOOKS]   hooks;
     int                                   hook_count;
+
+    // Runtime handles for hot reload
+    void*[MAX_PLUGINS]                   handles;       // dlopen/LoadLibrary handles
+    PluginShutdownFn[MAX_PLUGINS]        shutdown_fns;  // Shutdown callbacks
 }
 
 fn PluginManager new_manager() {
@@ -204,34 +245,159 @@ fn PluginManager new_manager() {
 fn void load_all(PluginManager* pm, PluginAPI* api, String directory) {
     io::printfn("[plugins] Scanning '%s' for plugins...", directory);
 
-    // In a full implementation, this would:
-    // 1. List all .so / .dll files in the directory
-    // 2. For each file:
-    //    a. dlopen() / LoadLibrary() the file
-    //    b. dlsym() / GetProcAddress() for whisker_plugin_info
-    //    c. Call whisker_plugin_info() to get plugin metadata
-    //    d. dlsym() for whisker_plugin_init
-    //    e. Call whisker_plugin_init(api) — pass the full API
-    //    f. Register the plugin info
-    //
-    // Example (POSIX):
-    //   void* handle = dlopen("plugins/my_plugin.so", RTLD_NOW);
-    //   auto info_fn = (PluginInfoFn)dlsym(handle, "whisker_plugin_info");
-    //   PluginInfo info = info_fn();
-    //   auto init_fn = (PluginInitFn)dlsym(handle, "whisker_plugin_init");
-    //   init_fn(api);
-    //
-    // Example (Windows):
-    //   HMODULE handle = LoadLibraryA("plugins\\my_plugin.dll");
-    //   auto info_fn = GetProcAddress(handle, "whisker_plugin_info");
-    //   ...
-    //
-    // C3 provides access to these via:
-    //   import std::os::posix;   // dlopen, dlsym
-    //   import std::os::win32;   // LoadLibraryA, GetProcAddress
+    // Use a shell command to list plugin files in the directory.
+    // Windows: dir /b *.dll    POSIX: ls -1 *.so
+    $if env::os == WIN32:
+        String cmd = string::tformat("dir /b \"%s\\*.dll\" 2>nul", directory);
+        void* pipe = _popen(cmd.ptr, "r".ptr);
+    $else
+        String cmd = string::tformat("ls -1 \"%s/\"*.so 2>/dev/null", directory);
+        void* pipe = popen(cmd.ptr, "r".ptr);
+    $endif
+
+    if (pipe != null) {
+        char[256] name_buf;
+        while (fgets(&name_buf[0], 256, pipe) != null) {
+            // Trim trailing newline/whitespace
+            usz len = 0;
+            while (len < 255 && name_buf[len] != 0 && name_buf[len] != '\n' && name_buf[len] != '\r') len++;
+            if (len < 4) continue;
+
+            String name = (String)name_buf[0..len - 1];
+
+            // Build full path to the plugin file
+            $if env::os == WIN32:
+                // dir /b gives just filenames — prepend directory
+                String full_path = string::tformat("%s\\%s", directory, name);
+            $else
+                // ls gives full relative paths (dir/file.so)
+                String full_path = name;
+            $endif
+
+            load_single(pm, api, full_path);
+        }
+
+        $if env::os == WIN32:
+            _pclose(pipe);
+        $else
+            pclose(pipe);
+        $endif
+    }
 
     io::printfn("[plugins] %d plugins loaded, %d commands registered, %d hooks registered.",
         pm.plugin_count, pm.command_count, pm.hook_count);
+}
+
+// Load a single shared library plugin from the given path.
+fn void load_single(PluginManager* pm, PluginAPI* api, String path) {
+    if (pm.plugin_count >= MAX_PLUGINS) {
+        io::printfn("[plugins] Max plugins (%d) reached, skipping: %s", MAX_PLUGINS, path);
+        return;
+    }
+
+    // Open the shared library
+    $if env::os == WIN32:
+        void* handle = LoadLibraryA(path.ptr);
+    $else
+        void* handle = dlopen(path.ptr, RTLD_NOW);
+    $endif
+
+    if (handle == null) {
+        $if env::os == WIN32:
+            io::printfn("[plugins] Failed to load: %s", path);
+        $else
+            char* err = dlerror();
+            if (err != null) {
+                io::printfn("[plugins] Failed to load: %s (%s)", path, (String)err[0..255]);
+            } else {
+                io::printfn("[plugins] Failed to load: %s", path);
+            }
+        $endif
+        return;
+    }
+
+    // Look up required exported functions
+    $if env::os == WIN32:
+        void* info_ptr     = GetProcAddress(handle, "whisker_plugin_info".ptr);
+        void* init_ptr     = GetProcAddress(handle, "whisker_plugin_init".ptr);
+        void* shutdown_ptr = GetProcAddress(handle, "whisker_plugin_shutdown".ptr);
+    $else
+        void* info_ptr     = dlsym(handle, "whisker_plugin_info".ptr);
+        void* init_ptr     = dlsym(handle, "whisker_plugin_init".ptr);
+        void* shutdown_ptr = dlsym(handle, "whisker_plugin_shutdown".ptr);
+    $endif
+
+    if (info_ptr == null || init_ptr == null) {
+        io::printfn("[plugins] '%s' missing required exports (whisker_plugin_info / whisker_plugin_init).", path);
+        $if env::os == WIN32:
+            FreeLibrary(handle);
+        $else
+            dlclose(handle);
+        $endif
+        return;
+    }
+
+    // Get plugin metadata
+    PluginInfoFn info_fn = (PluginInfoFn)info_ptr;
+    PluginInfo info = info_fn();
+
+    // Store handle and shutdown callback
+    int idx = pm.plugin_count;
+    pm.handles[idx]      = handle;
+    pm.shutdown_fns[idx] = shutdown_ptr != null ? (PluginShutdownFn)shutdown_ptr : null;
+
+    // Initialize the plugin — it registers commands and hooks via the API
+    PluginInitFn init_fn = (PluginInitFn)init_ptr;
+    init_fn(api);
+
+    // Register plugin info
+    pm.plugins[idx] = info;
+    pm.plugin_count++;
+
+    io::printfn("[plugins] Loaded: %s v%s by %s", info.name, info.version, info.author);
+}
+
+// ============================================================
+// Plugin unloading and hot reload
+// ============================================================
+
+// Unload all plugins: call shutdown, close handles, clear registrations.
+fn void unload_all(PluginManager* pm) {
+    // Call shutdown on each loaded plugin
+    for (int i = 0; i < pm.plugin_count; i++) {
+        if (pm.shutdown_fns[i] != null) {
+            io::printfn("[plugins] Shutting down: %s", pm.plugins[i].name);
+            pm.shutdown_fns[i]();
+        }
+    }
+
+    // Close all library handles
+    for (int i = 0; i < pm.plugin_count; i++) {
+        if (pm.handles[i] != null) {
+            $if env::os == WIN32:
+                FreeLibrary(pm.handles[i]);
+            $else
+                dlclose(pm.handles[i]);
+            $endif
+            pm.handles[i] = null;
+        }
+        pm.shutdown_fns[i] = null;
+    }
+
+    // Clear all registrations
+    pm.plugin_count  = 0;
+    pm.command_count = 0;
+    pm.hook_count    = 0;
+
+    io::printn("[plugins] All plugins unloaded.");
+}
+
+// Hot-reload: unload everything, then re-scan and re-load.
+fn void reload_all(PluginManager* pm, PluginAPI* api, String directory) {
+    io::printn("[plugins] --- Hot reload started ---");
+    unload_all(pm);
+    load_all(pm, api, directory);
+    io::printn("[plugins] --- Hot reload complete ---");
 }
 
 // ============================================================

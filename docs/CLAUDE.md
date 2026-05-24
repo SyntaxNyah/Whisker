@@ -38,7 +38,8 @@ Whisker is an Attorney Online 2 (AO2) server written in C3. It implements the fu
 | `whisker::pairing` | `pairing.c3` | Persistent UID-based pairing |
 | `whisker::security` | `security.c3` | Rate limiting, IP tracking, bans |
 | `whisker::websocket` | `websocket.c3` | WebSocket handshake + frame parsing |
-| `whisker::plugin` | `plugin.c3` | Plugin loading and dispatch |
+| `whisker::console` | `console.c3` | Server console, admin commands |
+| `whisker::plugin` | `plugin.c3` | Plugin loading, hot reload, dispatch |
 
 ### Key Design Decisions
 

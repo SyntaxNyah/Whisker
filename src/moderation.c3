@@ -16,15 +16,237 @@ import whisker::pairing;
 import whisker::protocol;
 import std::io;
 
+// C interop for file writing (accounts persistence)
+extern fn void* fopen(char* path, char* mode);
+extern fn int fputs(char* str, void* stream);
+extern fn int fclose(void* stream);
+
 // ============================================================
 // Authentication
 // ============================================================
 
-// Simple password-based auth.
-// In production, use bcrypt/argon2 and a proper account DB.
-// This is the minimal viable implementation — extend via plugins.
+// Account-based auth managed from the server console.
+// Use 'addmod' in the server terminal to create accounts.
+// Falls back to legacy password if no accounts are configured.
+// For production auth (bcrypt, database, OAuth), extend via plugins.
 
 const String DEFAULT_MOD_PASSWORD = "changeme";
+
+// ============================================================
+// Roles and Accounts
+// ============================================================
+
+const int MAX_ROLES    = 32;
+const int MAX_ACCOUNTS = 256;
+
+struct Role {
+    String name;
+    ulong  permissions;
+}
+
+struct Account {
+    String username;
+    String password;
+    String role_name;
+    ulong  permissions;  // Resolved from role at load time
+}
+
+// Module-level storage
+Role[MAX_ROLES]       _roles;
+int                   _role_count;
+Account[MAX_ACCOUNTS] _accounts;
+int                   _account_count;
+String                _config_dir;
+
+// ============================================================
+// Auth initialization — called once at server startup
+// ============================================================
+
+fn void init_auth(String config_dir) {
+    _config_dir = config_dir;
+    _role_count = 0;
+    _account_count = 0;
+
+    load_roles(config_dir);
+    load_accounts(config_dir);
+
+    if (_account_count == 0) {
+        io::printn("[auth] No accounts configured. Using legacy password auth.");
+        io::printn("[auth] Use 'addmod <user> <pass> [role]' in the server console to create accounts.");
+    }
+}
+
+fn void load_roles(String config_dir) {
+    String path = string::tformat("%s/roles.toml", config_dir);
+    char[]? data = io::file::load(mem, path);
+    if (catch data) {
+        io::printn("[auth] No roles.toml found, using default roles.");
+        _roles[0] = { .name = "moderator", .permissions = 39 };
+        _roles[1] = { .name = "admin", .permissions = 127 };
+        _roles[2] = { .name = "dj", .permissions = 256 };
+        _role_count = 3;
+        return;
+    }
+
+    String content = (String)data[0..data.len - 1];
+    int current = -1;
+
+    foreach (line : content.tsplit("\n")) {
+        String trimmed = line.trim();
+        if (trimmed.len == 0 || trimmed[0] == '#') continue;
+
+        if (trimmed == "[[role]]") {
+            if (_role_count >= MAX_ROLES) break;
+            current = _role_count;
+            _roles[current] = { .name = "", .permissions = 0 };
+            _role_count++;
+            continue;
+        }
+
+        if (current >= 0) {
+            if (try eq = trimmed.index_of_char('=')) {
+                String key   = trimmed[0..eq - 1].trim();
+                String value = trimmed[eq + 1..].trim();
+                if (value.len >= 2 && value[0] == '"') {
+                    value = value[1..value.len - 2];
+                }
+                if (key == "name")        _roles[current].name = value;
+                if (key == "permissions") _roles[current].permissions = (ulong)(value.to_int() ?? 0);
+            }
+        }
+    }
+
+    io::printfn("[auth] Loaded %d roles from roles.toml.", _role_count);
+}
+
+fn void load_accounts(String config_dir) {
+    String path = string::tformat("%s/accounts.txt", config_dir);
+    char[]? data = io::file::load(mem, path);
+    if (catch data) return; // No accounts file — that's fine
+
+    String content = (String)data[0..data.len - 1];
+
+    foreach (line : content.tsplit("\n")) {
+        String trimmed = line.trim();
+        if (trimmed.len == 0 || trimmed[0] == '#') continue;
+        if (_account_count >= MAX_ACCOUNTS) break;
+
+        // Format: username:password:role
+        String[] parts = trimmed.tsplit(":");
+        if (parts.len < 3) continue;
+
+        String role_name = parts[2];
+        ulong perms = resolve_role_permissions(role_name);
+
+        _accounts[_account_count] = {
+            .username    = parts[0],
+            .password    = parts[1],
+            .role_name   = role_name,
+            .permissions = perms,
+        };
+        _account_count++;
+    }
+
+    if (_account_count > 0) {
+        io::printfn("[auth] Loaded %d accounts.", _account_count);
+    }
+}
+
+fn ulong resolve_role_permissions(String role_name) {
+    for (int i = 0; i < _role_count; i++) {
+        if (_roles[i].name == role_name) return _roles[i].permissions;
+    }
+    return 0;
+}
+
+fn bool save_accounts() {
+    String path = string::tformat("%s/accounts.txt", _config_dir);
+    void* f = fopen(path.ptr, "w".ptr);
+    if (f == null) {
+        io::printn("[auth] ERROR: Failed to write accounts file.");
+        return false;
+    }
+
+    fputs("# Whisker moderator accounts\n".ptr, f);
+    fputs("# Managed via server console. Do not edit while server is running.\n".ptr, f);
+    fputs("# Format: username:password:role\n".ptr, f);
+
+    for (int i = 0; i < _account_count; i++) {
+        String line = string::tformat("%s:%s:%s\n",
+            _accounts[i].username, _accounts[i].password, _accounts[i].role_name);
+        fputs(line.ptr, f);
+    }
+
+    fclose(f);
+    return true;
+}
+
+// ============================================================
+// Account management — called from server console
+// ============================================================
+
+fn bool add_account(String username, String password, String role_name) {
+    // Validate role exists
+    bool role_found = false;
+    for (int i = 0; i < _role_count; i++) {
+        if (_roles[i].name == role_name) { role_found = true; break; }
+    }
+    if (!role_found) return false;
+
+    // Check for duplicate username
+    for (int i = 0; i < _account_count; i++) {
+        if (_accounts[i].username == username) return false;
+    }
+
+    if (_account_count >= MAX_ACCOUNTS) return false;
+
+    _accounts[_account_count] = {
+        .username    = username,
+        .password    = password,
+        .role_name   = role_name,
+        .permissions = resolve_role_permissions(role_name),
+    };
+    _account_count++;
+
+    return save_accounts();
+}
+
+fn bool remove_account(String username) {
+    for (int i = 0; i < _account_count; i++) {
+        if (_accounts[i].username == username) {
+            // Shift remaining accounts down
+            for (int j = i; j < _account_count - 1; j++) {
+                _accounts[j] = _accounts[j + 1];
+            }
+            _account_count--;
+            return save_accounts();
+        }
+    }
+    return false;
+}
+
+fn void list_accounts() {
+    if (_account_count == 0) {
+        io::printn("[auth] No accounts configured. Use 'addmod' to create one.");
+        return;
+    }
+
+    io::printfn("[auth] %d account(s):", _account_count);
+    for (int i = 0; i < _account_count; i++) {
+        io::printfn("  %s  [%s]  (perms: %d)",
+            _accounts[i].username, _accounts[i].role_name, (int)_accounts[i].permissions);
+    }
+}
+
+fn void list_roles() {
+    for (int i = 0; i < _role_count; i++) {
+        io::printfn("  %s  (perms: %d)", _roles[i].name, (int)_roles[i].permissions);
+    }
+}
+
+fn int get_account_count() {
+    return _account_count;
+}
 
 fn void cmd_login(server::Server* srv, client::Client* c, String args) {
     // /login <username> <password>
@@ -32,23 +254,43 @@ fn void cmd_login(server::Server* srv, client::Client* c, String args) {
         String username = args[0..space - 1];
         String password = args[space + 1..].trim();
 
-        // TODO: Check against account database
-        // For now, simple password check (CHANGE THIS!)
-        if (password == DEFAULT_MOD_PASSWORD) {
-            c.is_authenticated = true;
-            c.permissions = commands::PERM_MUTE | commands::PERM_KICK |
-                            commands::PERM_BAN | commands::PERM_MOVE_USERS |
-                            commands::PERM_MODIFY_AREA | commands::PERM_BAN_INFO |
-                            commands::PERM_ADMIN;
+        if (_account_count > 0) {
+            // Account-based auth — check username + password against accounts
+            for (int i = 0; i < _account_count; i++) {
+                if (_accounts[i].username == username && _accounts[i].password == password) {
+                    c.is_authenticated = true;
+                    c.permissions = _accounts[i].permissions;
 
-            String[] auth_fields = { string::tformat("%d", config::AUTH_SUCCESS) };
-            c.send_packet("AUTH", auth_fields);
-            c.send_server_message(string::tformat("Logged in as %s.", username));
-            io::printfn("[mod] %s logged in as '%s' (UID %d)", c.ipid, username, c.uid);
-        } else {
+                    String[] auth_fields = { string::tformat("%d", config::AUTH_SUCCESS) };
+                    c.send_packet("AUTH", auth_fields);
+                    c.send_server_message(string::tformat("Logged in as %s (%s).", username, _accounts[i].role_name));
+                    io::printfn("[mod] %s logged in as '%s' [%s] (UID %d)", c.ipid, username, _accounts[i].role_name, c.uid);
+                    return;
+                }
+            }
+
+            // No matching account
             String[] auth_fields = { string::tformat("%d", config::AUTH_FAILURE) };
             c.send_packet("AUTH", auth_fields);
-            c.send_server_message("Login failed. Wrong password.");
+            c.send_server_message("Login failed. Invalid username or password.");
+        } else {
+            // Fallback: legacy single-password auth (no accounts configured)
+            if (password == DEFAULT_MOD_PASSWORD) {
+                c.is_authenticated = true;
+                c.permissions = commands::PERM_MUTE | commands::PERM_KICK |
+                                commands::PERM_BAN | commands::PERM_MOVE_USERS |
+                                commands::PERM_MODIFY_AREA | commands::PERM_BAN_INFO |
+                                commands::PERM_ADMIN;
+
+                String[] auth_fields = { string::tformat("%d", config::AUTH_SUCCESS) };
+                c.send_packet("AUTH", auth_fields);
+                c.send_server_message(string::tformat("Logged in as %s.", username));
+                io::printfn("[mod] %s logged in as '%s' (UID %d) [legacy auth]", c.ipid, username, c.uid);
+            } else {
+                String[] auth_fields = { string::tformat("%d", config::AUTH_FAILURE) };
+                c.send_packet("AUTH", auth_fields);
+                c.send_server_message("Login failed. Wrong password.");
+            }
         }
     } else {
         c.send_server_message("Usage: /login <username> <password>");

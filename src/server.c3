@@ -15,6 +15,8 @@ import whisker::packets;
 import whisker::pairing;
 import whisker::plugin;
 import whisker::websocket;
+import whisker::console;
+import whisker::moderation;
 import std::io;
 import std::net::tcp;
 import std::time;
@@ -101,6 +103,9 @@ fn Server*? init(String config_dir) {
     );
     srv.ban_list.init();
 
+    // Load roles and accounts for authentication
+    moderation::init_auth(config_dir);
+
     // Build the plugin API with all server helpers
     srv.plugin_api = build_plugin_api(srv);
 
@@ -143,6 +148,14 @@ fn void? Server.run(&self) {
         } else {
             (void)ws_thread.detach();
         }
+    }
+
+    // Start the server console thread (reads stdin for admin commands)
+    Thread console_t;
+    if (catch console_t.create(&console::console_thread, self)) {
+        io::printn("[console] WARNING: Failed to start console thread");
+    } else {
+        (void)console_t.detach();
     }
 
     io::printn("[whisker] Server is ready. Accepting connections.");

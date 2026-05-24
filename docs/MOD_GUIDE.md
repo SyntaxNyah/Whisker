@@ -7,17 +7,19 @@ Everything you need to know to set up, run, and moderate your Whisker AO2 server
 ## Table of Contents
 
 1. [First-Time Setup](#first-time-setup)
-2. [Admin Password](#admin-password)
-3. [Logging In as a Moderator](#logging-in-as-a-moderator)
-4. [Roles and Permissions](#roles-and-permissions)
-5. [Moderation Commands](#moderation-commands)
-6. [Area Management](#area-management)
-7. [Server Configuration](#server-configuration)
-8. [Rate Limiting and Anti-DDoS](#rate-limiting-and-anti-ddos)
-9. [Bans and Ban Management](#bans-and-ban-management)
-10. [Plugins](#plugins)
-11. [Reverse Proxy and WSS](#reverse-proxy-and-wss)
-12. [Tips and Best Practices](#tips-and-best-practices)
+2. [Server Console](#server-console)
+3. [Account Management](#account-management)
+4. [Logging In as a Moderator](#logging-in-as-a-moderator)
+5. [Roles and Permissions](#roles-and-permissions)
+6. [Moderation Commands](#moderation-commands)
+7. [Area Management](#area-management)
+8. [Server Configuration](#server-configuration)
+9. [Rate Limiting and Anti-DDoS](#rate-limiting-and-anti-ddos)
+10. [Bans and Ban Management](#bans-and-ban-management)
+11. [Plugins](#plugins)
+12. [Plugin Hot Reloading](#plugin-hot-reloading)
+13. [Reverse Proxy and WSS](#reverse-proxy-and-wss)
+14. [Tips and Best Practices](#tips-and-best-practices)
 
 ---
 
@@ -54,11 +56,7 @@ motd = "Welcome! Type /help for commands."
 
 The `name` is what players see in the server browser. The `motd` is the first message players see when they join.
 
-### 4. Set your admin password
-
-**This is the most important step.** See the next section.
-
-### 5. Run the server
+### 4. Run the server
 
 ```bash
 ./build/whisker
@@ -72,46 +70,77 @@ Or with a custom config directory:
 
 ---
 
-## Admin Password
+## Server Console
 
-**CHANGE THE DEFAULT PASSWORD IMMEDIATELY.**
+When Whisker starts, it launches an interactive console in the terminal. This is where you manage accounts, reload plugins, and monitor the server -- all without connecting as a player.
 
-The default moderator password is `changeme`. If you leave this, anyone who guesses it has full control of your server.
+### Console commands
 
-### Where to change it
+| Command | Description |
+|---------|-------------|
+| `addmod <user> <pass> [role]` | Create a moderator account (default role: `moderator`) |
+| `removemod <username>` | Remove a moderator account |
+| `listmods` | List all moderator accounts and their roles |
+| `reload` | Hot-reload all plugins without restarting |
+| `status` | Show player count, areas, loaded plugins |
+| `help` | Show available commands and roles |
+| `quit` / `exit` / `stop` | Shut down the server |
 
-Open `src/moderation.c3` and find this line:
+### First thing to do after starting
 
-```c3
-const String DEFAULT_MOD_PASSWORD = "changeme";
+Create an admin account:
+
+```
+addmod Admin your_secure_password admin
 ```
 
-Change `"changeme"` to your own password:
+This creates an account named `Admin` with the `admin` role (full permissions). You can now log in from the game client with `/login Admin your_secure_password`.
 
-```c3
-const String DEFAULT_MOD_PASSWORD = "your_secure_password_here";
+### Examples
+
+```
+addmod Admin secretpass123 admin        # Full admin
+addmod Mod1 modpass moderator           # Standard moderator
+addmod DJ1 djpass dj                    # Music/background only
+removemod Mod1                          # Remove an account
+listmods                                # See all accounts
+reload                                  # Reload plugins after dropping in a new .dll/.so
+status                                  # Check server state
 ```
 
-Then rebuild the server:
+---
 
-```bash
-c3c build
+## Account Management
+
+Whisker uses a console-managed account system. Accounts are stored in `config/accounts.txt` and persist across restarts.
+
+### How it works
+
+1. Create accounts from the server console with `addmod`
+2. Each account has a **username**, **password**, and **role**
+3. Roles define which permissions the account gets (see [Roles and Permissions](#roles-and-permissions))
+4. Players log in from the game client with `/login <username> <password>`
+
+### Account file format
+
+Accounts are stored in `config/accounts.txt`:
+
+```
+# Whisker moderator accounts
+# Format: username:password:role
+Admin:secretpass123:admin
+Mod1:modpass:moderator
 ```
 
-### Password tips
+This file is managed by the server console. Do not edit it while the server is running -- changes made via `addmod`/`removemod` are written automatically.
 
-- Use something long and hard to guess. This isn't a user-facing login page  -- it's typed in OOC chat, so convenience matters less than security.
-- Don't use the same password you use for other services.
-- Don't share the password in public channels. Give it to trusted moderators only.
-- The password is compiled into the binary. If someone gets access to your binary, they could extract it. Run your server on a machine you trust.
+### Legacy fallback
 
-### Future improvements
+If `accounts.txt` is empty (no accounts configured), Whisker falls back to the legacy single-password auth from `moderation.c3`. This is for backwards compatibility -- once you add your first account via `addmod`, the legacy password is ignored and only accounts are used.
 
-The current auth system is intentionally minimal. The code comments say:
+### Extending the auth system
 
-> "In production, use bcrypt/argon2 and a proper account DB. This is the minimal viable implementation -- extend via plugins."
-
-For now, the single-password approach works fine for small to medium servers. If you need per-user accounts, role-based passwords, or database-backed auth, that's what the plugin system is for.
+The built-in account system is intentionally simple -- plain text passwords, file-based storage. If you need bcrypt/argon2 hashing, database-backed auth, OAuth, or any other advanced authentication, build it as a **plugin**. The Plugin API gives you full access to client operations, so a plugin can intercept `/login` and implement any auth flow you want.
 
 ---
 
@@ -130,22 +159,22 @@ Type this in OOC chat:
 Example:
 
 ```
-/login Admin your_secure_password_here
+/login Admin secretpass123
 ```
 
-- `<username>` can be anything -- it's a display label for logs, not an account system.
-- `<password>` must match the password you set in `moderation.c3`.
+- `<username>` must match an account created via `addmod` in the server console.
+- `<password>` must match the password for that account.
 
 On success, you'll see:
 
 ```
-Logged in as Admin.
+Logged in as Admin (admin).
 ```
 
-You now have full moderator permissions. The server console will log:
+You receive the permissions defined by your account's role. The server console logs:
 
 ```
-[mod] a1b2c3d4 logged in as 'Admin' (UID 0)
+[mod] a1b2c3d4 logged in as 'Admin' [admin] (UID 0)
 ```
 
 ### Logout
@@ -160,7 +189,8 @@ This immediately removes all your permissions for the rest of the session.
 
 - Login is per-session. If you disconnect, you need to log in again.
 - Your login is not visible to other players. Only the server console logs it.
-- Failed login attempts are also logged on the server console, so you can see if someone is trying to guess the password.
+- Failed login attempts are also logged on the server console.
+- Different accounts can have different roles -- an `admin` has more permissions than a `moderator`.
 
 ---
 
@@ -214,9 +244,11 @@ name = "helper"
 permissions = 3  # MUTE + KICK only
 ```
 
-### Current login behavior
+### How login uses roles
 
-Right now, `/login` grants ALL moderator permissions (MUTE through ADMIN) if the password matches. The roles in `roles.toml` are defined for future use when per-user accounts are implemented. To customize what `/login` grants, edit the permission assignment in `src/moderation.c3`.
+When you create an account with `addmod Admin password admin`, the `admin` role is looked up in `roles.toml` and its permission bits are stored with the account. When the player logs in with `/login Admin password`, they receive exactly those permissions -- no more, no less.
+
+To give someone limited permissions, assign them a role with fewer bits. For example, a `moderator` (perms=39) can mute, kick, ban, and move users, but cannot modify areas or access admin functions.
 
 ---
 
@@ -480,8 +512,8 @@ Whisker supports runtime plugins as shared libraries (`.so` on Linux, `.dll` on 
 ### Installing plugins
 
 1. Place the plugin file in the `plugins/` directory
-2. Restart the server
-3. The plugin loads automatically at startup
+2. Restart the server -- or type `reload` in the console to hot-reload
+3. The plugin loads automatically
 
 ### Plugin directory
 
@@ -506,6 +538,48 @@ When the server starts, it logs which plugins were loaded:
 See the [Plugin Dev Guide](../plugins/PLUGIN%20DEV%20GUIDE%20README.md) for the full development guide with 9 copy-paste examples.
 
 For details on how packets work under the hood, see the [AO2 Protocol Reference](AO2_PROTOCOL.md).
+
+---
+
+## Plugin Hot Reloading
+
+Whisker supports hot-reloading plugins without restarting the server. This means you can add, update, or remove plugins while the server is running and players are connected.
+
+### How to hot-reload
+
+1. Drop new `.dll`/`.so` files into `plugins/`, or replace existing ones
+2. Type `reload` in the server console
+
+```
+reload
+```
+
+The server will:
+1. Call `whisker_plugin_shutdown()` on every loaded plugin
+2. Close all shared library handles
+3. Clear all registered plugin commands and hooks
+4. Re-scan the `plugins/` directory
+5. Load and initialize all plugins fresh
+
+### What happens to players
+
+- Players stay connected -- hot reload does not disconnect anyone
+- Plugin commands become temporarily unavailable during reload (milliseconds)
+- After reload, all plugin commands and hooks are re-registered
+- Server state (areas, bans, connections) is not affected
+
+### When to use hot-reload
+
+- **Adding a new plugin**: Drop the file in and `reload`
+- **Updating a plugin**: Replace the file and `reload`
+- **Removing a plugin**: Delete the file from `plugins/` and `reload`
+- **Debugging**: Rebuild your plugin and `reload` to test changes instantly
+
+### Limitations
+
+- Core server code cannot be hot-reloaded -- only plugins
+- If a plugin stores internal state, that state is lost on reload (the plugin's `whisker_plugin_shutdown` should handle cleanup)
+- On Windows, you may need to stop the server to replace a `.dll` that's currently loaded (Windows locks open files). Workaround: rename the old file first, drop in the new one, then `reload`
 
 ---
 
@@ -536,7 +610,7 @@ See the full [WSS Setup Guide](WSS_SETUP.md) for step-by-step instructions.
 
 ### Before going public
 
-1. **Change the admin password.** Cannot stress this enough.
+1. **Create an admin account.** Run `addmod Admin yourpassword admin` in the server console immediately.
 2. **Test your server locally** before opening it to the public.
 3. **Set up WSS** if you want webAO players to connect.
 4. **Customize your areas** in `areas.toml` to match your server's theme.
@@ -552,8 +626,9 @@ See the full [WSS Setup Guide](WSS_SETUP.md) for step-by-step instructions.
 
 ### Security
 
-- **Never share your admin password** in public channels or in-game.
-- **Keep your server binary private.** The password is compiled in.
+- **Never share moderator passwords** in public channels or in-game.
+- **Use strong passwords** for admin accounts. They're typed in OOC chat, so make them long and unique.
+- **Give each moderator their own account** rather than sharing one password. This way you can revoke access individually with `removemod`.
 - **Use a reverse proxy** (Cloudflare Tunnel) to hide your server's real IP.
 - **Enable connection flood protection** (`conn_flood_autoban = true`).
 - **Keep multiclient_limit reasonable** (8-16 is fine for most servers).
