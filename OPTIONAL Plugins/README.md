@@ -24,9 +24,11 @@ Delete this entire `OPTIONAL Plugins` folder. It won't affect your server.
 
 ### Server Advertiser
 
-**File:** `server_advertiser.c3`
+**Files:** `server_advertiser.dll` (compiled) · `server_advertiser.c3` (source)
 
 Advertises your server to the Attorney Online master server so players can find it in the public server browser. Without this plugin, your server is unlisted -- players can only connect by entering your IP and port manually.
+
+The `.c3` source file is included as a learning exercise -- if you want to try compiling a plugin yourself, this is a great one to start with. See the [Plugin Dev Guide](../plugins/PLUGIN%20DEV%20GUIDE%20README.md) for how to set up a C3 project and build it.
 
 **Setup:**
 
@@ -52,4 +54,4 @@ The plugin will automatically advertise your server every 60 seconds. You'll see
 
 Not every server wants to be public. Private servers, test servers, and LAN servers have no reason to advertise. Making it opt-in keeps the core server simple and puts you in control.
 
-See the [Plugin Dev Guide](../plugins/PLUGIN%20DEV%20GUIDE%20README.md) for how to build and deploy plugins.
+See the [Plugin Dev Guide](../plugins/PLUGIN%20DEV%20GUIDE%20README.md) for writing your own plugins.
