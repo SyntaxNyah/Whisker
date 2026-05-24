@@ -270,7 +270,8 @@ fn void Server.handle_new_connection(&self, tcp::TcpSocket socket, bool is_webso
     // C3's socket.write() may buffer; the client won't proceed until it
     // receives this packet, so it must go out on the wire right away.
     int fd = get_raw_fd(&c.socket);
-    c_send(fd, config::DECRYPTOR_PACKET.ptr, config::DECRYPTOR_PACKET.len, 0);
+    long sent = c_send(fd, config::DECRYPTOR_PACKET.ptr, config::DECRYPTOR_PACKET.len, 0);
+    io::printfn("[debug] Decryptor send: fd=%d sent=%d bytes", fd, (int)sent);
 
     // Spawn a thread to handle this client
     ClientThreadArgs* args = mem::new(ClientThreadArgs);
@@ -364,6 +365,10 @@ fn int ws_listener_thread(void* arg) {
 fn void client_handler(Server* server, client::Client* c) {
     char[4096] read_buf;
 
+    int handler_fd = get_raw_fd(&c.socket);
+    io::printfn("[debug] Handler thread started for %s (fd=%d, ws=%s)",
+        c.ipid, handler_fd, c.is_websocket ? "yes" : "no");
+
     // Handshake timeout: client must join within HANDSHAKE_TIMEOUT_MS
     long deadline = security::current_time_sec() + config::HANDSHAKE_TIMEOUT_MS / 1000;
 
@@ -398,8 +403,14 @@ fn void client_handler(Server* server, client::Client* c) {
         } else {
             // TCP: read raw bytes
             sz? bytes_read = c.socket.read(&read_buf);
-            if (catch bytes_read) break;
-            if (bytes_read == 0) break;
+            if (catch bytes_read) {
+                io::printfn("[debug] Socket read ERROR for %s (fd=%d)", c.ipid, get_raw_fd(&c.socket));
+                break;
+            }
+            if (bytes_read == 0) {
+                io::printfn("[debug] Socket read returned 0 for %s (client disconnected)", c.ipid);
+                break;
+            }
 
             c.last_activity = security::current_time_sec();
             c.packet_buf.feed((String)read_buf[0..bytes_read - 1]);
