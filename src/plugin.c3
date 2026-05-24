@@ -38,8 +38,8 @@ import std::io;
 
 // Shared library loading — Windows
 extern fn void* load_library_a(char* path) @cname("LoadLibraryA") @if(env::WIN32);
-extern fn void* get_proc_address(void* module, char* name) @cname("GetProcAddress") @if(env::WIN32);
-extern fn int free_library(void* module) @cname("FreeLibrary") @if(env::WIN32);
+extern fn void* get_proc_address(void* handle, char* name) @cname("GetProcAddress") @if(env::WIN32);
+extern fn int free_library(void* handle) @cname("FreeLibrary") @if(env::WIN32);
 
 // Shared library loading — POSIX
 extern fn void* dlopen(char* path, int flags) @if(!env::WIN32);
