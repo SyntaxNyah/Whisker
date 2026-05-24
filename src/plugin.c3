@@ -44,17 +44,109 @@ struct PluginInfo {
 }
 
 // ============================================================
-// Command handler type — plugins register these
+// Handler types — plugins register these
 // ============================================================
 
-alias CommandHandler = fn void(client::Client* c, String args);
+// Command handler. Client pointer is void* for ABI compatibility
+// with standalone plugins (.dll/.so).
+alias CommandHandler = fn void(void* client, String args);
+
+// Packet hook. Returns true to consume the packet (stop processing).
+// Both pointers are void* for standalone plugin compatibility.
+alias PacketHook = fn bool(void* client, void* packet);
 
 // ============================================================
-// Packet hook type — plugins can intercept packets
+// Plugin API function pointer types
 // ============================================================
+//
+// These define the function signatures for the PluginAPI struct.
+// The server fills these in with wrapper functions during init.
+// Standalone plugins call these to interact with the server.
 
-// Returns true to consume the packet (stop further processing).
-alias PacketHook = fn bool(client::Client* c, protocol::Packet* pkt);
+// -- Registration --
+alias ApiRegisterCommandFn = fn void(String name, CommandHandler handler, ulong perms, String desc, String plugin_name);
+alias ApiRegisterHookFn    = fn void(String header, PacketHook hook, String plugin_name);
+
+// -- Server operations --
+alias ApiFindClientFn        = fn void*(int uid);
+alias ApiBroadcastAreaMsgFn  = fn void(int area_id, String msg);
+alias ApiBroadcastAreaRawFn  = fn void(int area_id, String data);
+alias ApiBroadcastArupFn     = fn void(int arup_type);
+alias ApiGetAreaCountFn      = fn int();
+
+// -- Area operations --
+alias ApiAreaIsCmFn         = fn bool(int area_id, int uid);
+alias ApiAreaAddCmFn        = fn void(int area_id, int uid);
+alias ApiAreaRemoveCmFn     = fn void(int area_id, int uid);
+alias ApiAreaCmCountFn      = fn int(int area_id);
+alias ApiAreaClearCmsFn     = fn void(int area_id);
+alias ApiAreaUninviteFn     = fn void(int area_id, int uid);
+alias ApiAreaSetStatusFn    = fn void(int area_id, int status);
+alias ApiAreaGetStatusFn    = fn int(int area_id);
+alias ApiAreaGetNameFn      = fn String(int area_id);
+alias ApiAreaSetSongFn      = fn void(int area_id, String song, int player_uid);
+alias ApiForceMoveFn        = fn void(void* client, int new_area_id);
+
+// -- Client operations --
+alias ApiClientSendMsgFn     = fn void(void* client, String msg);
+alias ApiClientSendRawFn     = fn void(void* client, String data);
+alias ApiClientGetUidFn      = fn int(void* client);
+alias ApiClientGetAreaFn     = fn int(void* client);
+alias ApiClientIsModFn       = fn bool(void* client);
+alias ApiClientDisplayNameFn = fn String(void* client);
+alias ApiClientGetCharIdFn   = fn int(void* client);
+alias ApiClientGetShownameFn = fn String(void* client);
+alias ApiClientGetCharNameFn = fn String(void* client);
+alias ApiClientIsJoinedFn    = fn bool(void* client);
+alias ApiClientSetPositionFn = fn void(void* client, String pos);
+
+// ============================================================
+// Plugin API — passed to plugins during init
+// ============================================================
+//
+// This struct is the bridge between standalone plugins and the
+// server. Each field is a function pointer that the server fills
+// in during initialization. Plugins store the API pointer and
+// call these functions to interact with Whisker.
+
+struct PluginAPI {
+    // Registration
+    ApiRegisterCommandFn  register_command;
+    ApiRegisterHookFn     register_hook;
+
+    // Server
+    ApiFindClientFn       find_client;
+    ApiBroadcastAreaMsgFn broadcast_area_msg;
+    ApiBroadcastAreaRawFn broadcast_area_raw;
+    ApiBroadcastArupFn    broadcast_arup;
+    ApiGetAreaCountFn     get_area_count;
+
+    // Area
+    ApiAreaIsCmFn         area_is_cm;
+    ApiAreaAddCmFn        area_add_cm;
+    ApiAreaRemoveCmFn     area_remove_cm;
+    ApiAreaCmCountFn      area_cm_count;
+    ApiAreaClearCmsFn     area_clear_cms;
+    ApiAreaUninviteFn     area_uninvite;
+    ApiAreaSetStatusFn    area_set_status;
+    ApiAreaGetStatusFn    area_get_status;
+    ApiAreaGetNameFn      area_get_name;
+    ApiAreaSetSongFn      area_set_song;
+    ApiForceMoveFn        force_move;
+
+    // Client
+    ApiClientSendMsgFn     client_send_msg;
+    ApiClientSendRawFn     client_send_raw;
+    ApiClientGetUidFn      client_get_uid;
+    ApiClientGetAreaFn     client_get_area;
+    ApiClientIsModFn       client_is_mod;
+    ApiClientDisplayNameFn client_display_name;
+    ApiClientGetCharIdFn   client_get_char_id;
+    ApiClientGetShownameFn client_get_showname;
+    ApiClientGetCharNameFn client_get_char_name;
+    ApiClientIsJoinedFn    client_is_joined;
+    ApiClientSetPositionFn client_set_position;
+}
 
 // ============================================================
 // Registered plugin command
@@ -106,61 +198,10 @@ fn PluginManager new_manager() {
 }
 
 // ============================================================
-// Plugin API — passed to plugins during init
-// ============================================================
-
-// This struct is the bridge between plugins and the server.
-// Plugins call these function pointers to interact with Whisker.
-
-struct PluginAPI {
-    PluginManager* manager;
-}
-
-// Register a new OOC command from a plugin.
-fn void PluginAPI.register_command(
-    &self,
-    String name,
-    CommandHandler handler,
-    ulong required_perms,
-    String description,
-    String plugin_name
-) {
-    PluginManager* pm = self.manager;
-    if (pm.command_count >= MAX_PLUGIN_COMMANDS) return;
-
-    pm.commands[pm.command_count] = {
-        .name = name,
-        .handler = handler,
-        .required_perms = required_perms,
-        .description = description,
-        .plugin_name = plugin_name,
-    };
-    pm.command_count++;
-}
-
-// Register a packet hook from a plugin.
-fn void PluginAPI.register_hook(
-    &self,
-    String header,
-    PacketHook hook,
-    String plugin_name
-) {
-    PluginManager* pm = self.manager;
-    if (pm.hook_count >= MAX_PLUGIN_HOOKS) return;
-
-    pm.hooks[pm.hook_count] = {
-        .header = header,
-        .hook = hook,
-        .plugin_name = plugin_name,
-    };
-    pm.hook_count++;
-}
-
-// ============================================================
 // Plugin loading — scan directory and load shared libraries
 // ============================================================
 
-fn void load_all(PluginManager* pm, String directory) {
+fn void load_all(PluginManager* pm, PluginAPI* api, String directory) {
     io::printfn("[plugins] Scanning '%s' for plugins...", directory);
 
     // In a full implementation, this would:
@@ -170,16 +211,15 @@ fn void load_all(PluginManager* pm, String directory) {
     //    b. dlsym() / GetProcAddress() for whisker_plugin_info
     //    c. Call whisker_plugin_info() to get plugin metadata
     //    d. dlsym() for whisker_plugin_init
-    //    e. Create a PluginAPI and call whisker_plugin_init(&api)
-    //    f. Register the plugin
+    //    e. Call whisker_plugin_init(api) — pass the full API
+    //    f. Register the plugin info
     //
     // Example (POSIX):
     //   void* handle = dlopen("plugins/my_plugin.so", RTLD_NOW);
     //   auto info_fn = (PluginInfoFn)dlsym(handle, "whisker_plugin_info");
     //   PluginInfo info = info_fn();
     //   auto init_fn = (PluginInitFn)dlsym(handle, "whisker_plugin_init");
-    //   PluginAPI api = { .manager = pm };
-    //   init_fn(&api);
+    //   init_fn(api);
     //
     // Example (Windows):
     //   HMODULE handle = LoadLibraryA("plugins\\my_plugin.dll");

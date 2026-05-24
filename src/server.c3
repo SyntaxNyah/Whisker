@@ -52,6 +52,7 @@ struct Server {
 
     // Plugins
     plugin::PluginManager plugins;
+    plugin::PluginAPI     plugin_api;
 
     // State
     bool               running;
@@ -80,10 +81,6 @@ fn Server*? init(String config_dir) {
     io::printfn("[whisker] Loaded: %d characters, %d music tracks, %d areas",
         (int)characters.len, (int)music_list.len, (int)areas.len);
 
-    // Initialize plugin manager
-    plugin::PluginManager plugins = plugin::new_manager();
-    plugin::load_all(&plugins, cfg.plugin_directory);
-
     Server* srv = mem::new(Server);
     srv.cfg          = cfg;
     srv.config_dir   = config_dir;
@@ -95,7 +92,7 @@ fn Server*? init(String config_dir) {
     srv.char_count   = (int)characters.len;
     srv.music        = music_list;
     srv.music_count  = (int)music_list.len;
-    srv.plugins      = plugins;
+    srv.plugins      = plugin::new_manager();
     srv.running      = true;
     srv.ip_tracker.init(
         cfg.conn_rate_limit,
@@ -103,6 +100,13 @@ fn Server*? init(String config_dir) {
         cfg.flood_ban_threshold
     );
     srv.ban_list.init();
+
+    // Build the plugin API with all server helpers
+    srv.plugin_api = build_plugin_api(srv);
+
+    // Load plugins from the plugins directory
+    plugin::load_all(&srv.plugins, &srv.plugin_api, cfg.plugin_directory);
+
     return srv;
 }
 
@@ -545,4 +549,246 @@ fn client::Client* find_client_by_uid(Server* server, int uid) {
         }
     }
     return null;
+}
+
+// ============================================================
+// Plugin API wrappers — bridge between plugins and server
+// ============================================================
+//
+// Standalone plugins (.dll/.so) call these through the PluginAPI
+// function pointers. Module-level _plugin_srv provides server
+// context without requiring it as a parameter.
+
+Server* _plugin_srv;
+
+// -- Registration --
+
+fn void _api_register_command(String name, plugin::CommandHandler handler, ulong perms, String desc, String plugin_name) {
+    plugin::PluginManager* pm = &_plugin_srv.plugins;
+    if (pm.command_count >= plugin::MAX_PLUGIN_COMMANDS) return;
+
+    pm.commands[pm.command_count] = {
+        .name = name,
+        .handler = handler,
+        .required_perms = perms,
+        .description = desc,
+        .plugin_name = plugin_name,
+    };
+    pm.command_count++;
+}
+
+fn void _api_register_hook(String header, plugin::PacketHook hook, String plugin_name) {
+    plugin::PluginManager* pm = &_plugin_srv.plugins;
+    if (pm.hook_count >= plugin::MAX_PLUGIN_HOOKS) return;
+
+    pm.hooks[pm.hook_count] = {
+        .header = header,
+        .hook = hook,
+        .plugin_name = plugin_name,
+    };
+    pm.hook_count++;
+}
+
+// -- Server operations --
+
+fn void* _api_find_client(int uid) {
+    return find_client_by_uid(_plugin_srv, uid);
+}
+
+fn void _api_broadcast_area_msg(int area_id, String msg) {
+    if (area_id < 0 || area_id >= _plugin_srv.area_count) return;
+    broadcast_area(_plugin_srv, area_id,
+        protocol::build("CT", { config::SERVER_SOFTWARE, msg, "1" }));
+}
+
+fn void _api_broadcast_area_raw(int area_id, String data) {
+    if (area_id < 0 || area_id >= _plugin_srv.area_count) return;
+    broadcast_area(_plugin_srv, area_id, data);
+}
+
+fn void _api_broadcast_arup(int arup_type) {
+    broadcast_arup(_plugin_srv, arup_type);
+}
+
+fn int _api_get_area_count() {
+    return _plugin_srv.area_count;
+}
+
+// -- Area CM operations --
+
+fn bool _api_area_is_cm(int area_id, int uid) {
+    if (area_id < 0 || area_id >= _plugin_srv.area_count) return false;
+    return _plugin_srv.areas[area_id].is_cm(uid);
+}
+
+fn void _api_area_add_cm(int area_id, int uid) {
+    if (area_id < 0 || area_id >= _plugin_srv.area_count) return;
+    _plugin_srv.areas[area_id].add_cm(uid);
+}
+
+fn void _api_area_remove_cm(int area_id, int uid) {
+    if (area_id < 0 || area_id >= _plugin_srv.area_count) return;
+    _plugin_srv.areas[area_id].remove_cm(uid);
+}
+
+fn int _api_area_cm_count(int area_id) {
+    if (area_id < 0 || area_id >= _plugin_srv.area_count) return 0;
+    return _plugin_srv.areas[area_id].cm_count;
+}
+
+fn void _api_area_clear_cms(int area_id) {
+    if (area_id < 0 || area_id >= _plugin_srv.area_count) return;
+    _plugin_srv.areas[area_id].cm_count = 0;
+}
+
+// -- Area management --
+
+fn void _api_area_uninvite(int area_id, int uid) {
+    if (area_id < 0 || area_id >= _plugin_srv.area_count) return;
+    _plugin_srv.areas[area_id].uninvite(uid);
+}
+
+fn void _api_area_set_status(int area_id, int status) {
+    if (area_id < 0 || area_id >= _plugin_srv.area_count) return;
+    _plugin_srv.areas[area_id].status = (area::AreaStatus)status;
+}
+
+fn int _api_area_get_status(int area_id) {
+    if (area_id < 0 || area_id >= _plugin_srv.area_count) return 0;
+    return (int)_plugin_srv.areas[area_id].status;
+}
+
+fn String _api_area_get_name(int area_id) {
+    if (area_id < 0 || area_id >= _plugin_srv.area_count) return "";
+    return _plugin_srv.areas[area_id].name;
+}
+
+fn void _api_area_set_song(int area_id, String song, int player_uid) {
+    if (area_id < 0 || area_id >= _plugin_srv.area_count) return;
+    _plugin_srv.areas[area_id].current_song = song;
+    _plugin_srv.areas[area_id].song_player_uid = player_uid;
+}
+
+// Force-move a client to another area (bypasses lock check).
+// Handles all cleanup: char release, player counts, CM removal,
+// area reset, char re-take, area state sync, and ARUP broadcast.
+fn void _api_force_move(void* c, int new_area_id) {
+    client::Client* target = (client::Client*)c;
+    Server* srv = _plugin_srv;
+
+    if (new_area_id < 0 || new_area_id >= srv.area_count) return;
+    if (new_area_id == target.area_id) return;
+
+    // Leave old area
+    area::Area* old_area = &srv.areas[target.area_id];
+    if (target.char_id != config::NO_CHAR_SELECTED) {
+        old_area.release_char(target.char_id);
+    }
+    old_area.player_count--;
+    old_area.remove_cm(target.uid);
+    if (old_area.player_count <= 0) old_area.reset();
+
+    // Enter new area
+    target.area_id = new_area_id;
+    area::Area* new_area = &srv.areas[new_area_id];
+    new_area.player_count++;
+
+    if (target.char_id != config::NO_CHAR_SELECTED) {
+        if (!new_area.is_char_taken(target.char_id)) {
+            new_area.take_char(target.char_id);
+        } else {
+            target.char_id = config::NO_CHAR_SELECTED;
+            target.char_name = "";
+        }
+    }
+
+    packets::send_area_state(srv, target);
+    broadcast_all_arup(srv);
+    target.send_server_message(string::tformat("Moved to %s.", new_area.name));
+}
+
+// -- Client operations --
+
+fn void _api_client_send_msg(void* c, String msg) {
+    ((client::Client*)c).send_server_message(msg);
+}
+
+fn void _api_client_send_raw(void* c, String data) {
+    ((client::Client*)c).send_raw(data);
+}
+
+fn int _api_client_get_uid(void* c) {
+    return ((client::Client*)c).uid;
+}
+
+fn int _api_client_get_area(void* c) {
+    return ((client::Client*)c).area_id;
+}
+
+fn bool _api_client_is_mod(void* c) {
+    return ((client::Client*)c).is_moderator();
+}
+
+fn String _api_client_display_name(void* c) {
+    return ((client::Client*)c).display_name();
+}
+
+fn int _api_client_get_char_id(void* c) {
+    return ((client::Client*)c).char_id;
+}
+
+fn String _api_client_get_showname(void* c) {
+    return ((client::Client*)c).showname;
+}
+
+fn String _api_client_get_char_name(void* c) {
+    return ((client::Client*)c).char_name;
+}
+
+fn bool _api_client_is_joined(void* c) {
+    return ((client::Client*)c).joined;
+}
+
+fn void _api_client_set_position(void* c, String pos) {
+    ((client::Client*)c).position = pos;
+}
+
+// ============================================================
+// Build the fully populated PluginAPI
+// ============================================================
+
+fn plugin::PluginAPI build_plugin_api(Server* srv) {
+    _plugin_srv = srv;
+
+    return {
+        .register_command   = &_api_register_command,
+        .register_hook      = &_api_register_hook,
+        .find_client        = &_api_find_client,
+        .broadcast_area_msg = &_api_broadcast_area_msg,
+        .broadcast_area_raw = &_api_broadcast_area_raw,
+        .broadcast_arup     = &_api_broadcast_arup,
+        .get_area_count     = &_api_get_area_count,
+        .area_is_cm         = &_api_area_is_cm,
+        .area_add_cm        = &_api_area_add_cm,
+        .area_remove_cm     = &_api_area_remove_cm,
+        .area_cm_count      = &_api_area_cm_count,
+        .area_clear_cms     = &_api_area_clear_cms,
+        .area_uninvite      = &_api_area_uninvite,
+        .area_set_status    = &_api_area_set_status,
+        .area_get_status    = &_api_area_get_status,
+        .area_get_name      = &_api_area_get_name,
+        .area_set_song      = &_api_area_set_song,
+        .force_move         = &_api_force_move,
+        .client_send_msg    = &_api_client_send_msg,
+        .client_send_raw    = &_api_client_send_raw,
+        .client_get_uid     = &_api_client_get_uid,
+        .client_get_area    = &_api_client_get_area,
+        .client_is_mod      = &_api_client_is_mod,
+        .client_display_name = &_api_client_display_name,
+        .client_get_char_id  = &_api_client_get_char_id,
+        .client_get_showname = &_api_client_get_showname,
+        .client_get_char_name = &_api_client_get_char_name,
+        .client_is_joined    = &_api_client_is_joined,
+        .client_set_position = &_api_client_set_position,
+    };
 }

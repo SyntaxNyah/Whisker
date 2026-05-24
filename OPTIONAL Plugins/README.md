@@ -65,4 +65,67 @@ The plugin will automatically advertise your server every 60 seconds. You'll see
 
 Not every server wants to be public. Private servers, test servers, and LAN servers have no reason to advertise. Making it opt-in keeps the core server simple and puts you in control.
 
+---
+
+### Case Manager (CM)
+
+**Compiled:** `Windows/case_manager.dll` · `Linux/case_manager.so`
+**Source:** `case_manager.c3`
+
+Gives players a **Case Manager (CM)** role for area control — inspired by [Akashi](https://github.com/AttorneyOnline/akashi)'s CM system. CM is a per-area role that any player can claim. It lets players run their own courtroom without needing a moderator present.
+
+The `.c3` source file is included as a learning exercise. It's the most complete example of a standalone plugin using the full Plugin API (commands, area management, client operations). See the [Plugin Dev Guide](../plugins/PLUGIN%20DEV%20GUIDE%20README.md) for how to set up a C3 project and build it.
+
+**What CM can do:**
+- Lock and unlock the area (built-in `/lock` and `/unlock` already check for CM)
+- Kick players from the area
+- Play music
+- Set the area status (IDLE, CASING, RP, etc.)
+- Force player positions (def, pro, wit, jud, hld, hlp)
+- Manage the area invite list
+
+**How CM works:**
+- Type `/cm` to become CM of an area — only works if no other CMs exist
+- Existing CMs can promote others with `/cm <uid>`
+- CM status is **automatically lost** when you leave the area or disconnect
+- Multiple CMs can exist in one area
+- Moderators bypass all CM permission checks
+
+**Commands:**
+
+| Command | Usage | Description |
+|---------|-------|-------------|
+| `/cm` | `/cm [uid]` | Become CM, or promote another player |
+| `/uncm` | `/uncm [uid\|all]` | Remove CM from self, another player, or everyone |
+| `/area_kick` | `/area_kick <uid>` | Kick a player from the area to the lobby |
+| `/play` | `/play <song>` | Play a song in the area |
+| `/status` | `/status [status]` | Set area status (idle, lfp, casing, recess, rp, gaming) |
+| `/forcepos` | `/forcepos <uid> <pos>` | Force a player's position (def, pro, wit, jud, hld, hlp) |
+| `/uninvite` | `/uninvite <uid>` | Remove a player from the area's invite list |
+
+**Setup:**
+
+1. Grab the `.dll` or `.so` from the appropriate folder and drop it into your server's `plugins/` directory
+2. Restart the server. No configuration needed.
+
+All commands automatically appear in `/help`.
+
+**To remove it:**
+
+Delete the `.dll` / `.so` file from `plugins/` and restart.
+
+**Why is this a plugin and not built-in?**
+
+Not every server wants players to self-manage areas. Some servers prefer moderator-only control. Keeping CM as a standalone plugin means you can add or remove it without touching the server code at all — just drop or delete the file.
+
+**Design notes (for developers):**
+
+- CM state is stored in the area's existing `cm_uids` / `cm_count` fields (see `area.c3`)
+- The core server already strips CM on area change (`packets.c3:change_area`) and disconnect (`server.c3:client_cleanup`)
+- The built-in `/lock` and `/unlock` commands already check for CM status — no duplication needed
+- Area kick uses the Plugin API's `force_move` to send players to the lobby, and removes them from the invite list to prevent re-entry
+- The plugin communicates with the server entirely through the `PluginAPI` function pointers — no imports from the server source
+
+---
+
 See the [Plugin Dev Guide](../plugins/PLUGIN%20DEV%20GUIDE%20README.md) for writing your own plugins.

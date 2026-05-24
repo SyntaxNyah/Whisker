@@ -107,7 +107,7 @@ fn void dispatch(server::Server* srv, client::Client* c, String message) {
 fn void cmd_help(server::Server* srv, client::Client* c, String args) {
     if (args.len > 0) {
         // Help for specific command
-        cmd_help_specific(c, args);
+        cmd_help_specific(srv, c, args);
         return;
     }
 
@@ -131,9 +131,24 @@ fn void cmd_help(server::Server* srv, client::Client* c, String args) {
         c.send_server_message("/kick /ban /unban /mute /unmute /oocmute /oocunmute");
         c.send_server_message("/lock /unlock /invite /bg /forcepair /forceunpair");
     }
+
+    // Plugin commands
+    if (srv.plugins.command_count > 0) {
+        String last_plugin = "";
+        for (int i = 0; i < srv.plugins.command_count; i++) {
+            plugin::PluginCommand* cmd = &srv.plugins.commands[i];
+            if (cmd.required_perms != 0 && !c.has_permission(cmd.required_perms)) continue;
+
+            if (cmd.plugin_name != last_plugin) {
+                c.send_server_message(string::tformat("--- %s ---", cmd.plugin_name));
+                last_plugin = cmd.plugin_name;
+            }
+            c.send_server_message(string::tformat("/%s  - %s", cmd.name, cmd.description));
+        }
+    }
 }
 
-fn void cmd_help_specific(client::Client* c, String cmd) {
+fn void cmd_help_specific(server::Server* srv, client::Client* c, String cmd) {
     switch {
         case cmd == "pair":
             c.send_server_message("/pair <uid> — Request to pair with a player.");
@@ -145,6 +160,16 @@ fn void cmd_help_specific(client::Client* c, String cmd) {
         case cmd == "roll":
             c.send_server_message("/roll [NdM] — Roll N dice with M sides. Default: 1d6.");
         default:
+            // Check plugin commands
+            for (int i = 0; i < srv.plugins.command_count; i++) {
+                if (srv.plugins.commands[i].name == cmd) {
+                    c.send_server_message(string::tformat("/%s — %s",
+                        cmd, srv.plugins.commands[i].description));
+                    c.send_server_message(string::tformat("(Plugin: %s)",
+                        srv.plugins.commands[i].plugin_name));
+                    return;
+                }
+            }
             c.send_server_message(string::tformat("No detailed help for '/%s'.", cmd));
     }
 }
