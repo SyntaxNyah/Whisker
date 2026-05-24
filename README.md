@@ -77,12 +77,31 @@ For detailed step-by-step setup instructions with commands, see the [WSS Setup G
 
 ## Plugins
 
-Drop compiled plugin libraries (`.so` / `.dll`) into `plugins/`.
-See the [Plugin Dev Guide](plugins/PLUGIN%20DEV%20GUIDE%20README.md) for the full development guide.
+The plugin system is the answer to AO server fragmentation. The AO community has been through this cycle too many times -- someone forks a server to add a feature, the fork drifts, the upstream moves on, and now there are two half-maintained codebases that nobody can combine. Players get stuck on whichever fork their server chose, and developers burn out maintaining code that only helps one community.
 
-The plugin system is the answer to AO server fork fragmentation. Instead of
-forking the whole server to add features, write a plugin. Ship it separately.
-Everyone benefits.
+**Whisker's core is intentionally small and lightweight.** Connections, packets, areas, characters, moderation -- that's it. Everything else is a plugin. Want CM controls? Drop in `case_manager.dll`. Want your server listed on the master server? Drop in `server_advertiser.dll`. Don't want either? Don't drop anything in. Your server, your choice.
+
+**How it works for server operators:**
+
+1. Open the [`OPTIONAL Plugins`](OPTIONAL%20Plugins/) folder
+2. Grab the `.dll` (Windows) or `.so` (Linux) for the plugins you want
+3. Drag them into your server's `plugins/` directory
+4. Restart -- done
+
+No compiling, no config files (unless the plugin needs one), no source code. Every plugin includes documentation on what it does and how to set it up.
+
+**For developers -- plugins first, core commits welcome:**
+
+We welcome contributions to Whisker's core -- bug fixes, performance improvements, protocol support, and documentation always have a home here. But if you're building a **new feature**, we strongly recommend shipping it as a plugin:
+
+- **Your work stays compatible.** A plugin built against the Plugin API works with every Whisker server. A feature buried in a fork only helps the people running that specific fork. When that fork gets abandoned (and forks always get abandoned), your work disappears with it.
+- **Server operators get to choose.** Not every server wants every feature. Plugins let operators pick exactly what they need. A core commit forces a feature on everyone whether they want it or not.
+- **You ship on your own schedule.** No waiting for PR reviews, no merge conflicts, no dependency on upstream release cycles. Build it, compile it, share the binary -- people can use it today.
+- **It's trivial to remove.** Delete the file and restart. Compare that to reverting commits, resolving merge conflicts, and rebuilding from source.
+
+The `OPTIONAL Plugins/` folder is where community plugins live -- source code, pre-compiled binaries for Windows and Linux, and documentation all in one place. If you build something useful, submit it there. The community gets a feature they can opt into, you get distribution to every Whisker server, and the core stays clean.
+
+See the [Plugin Dev Guide](plugins/PLUGIN%20DEV%20GUIDE%20README.md) for the full development guide with 9 copy-paste examples, cross-compilation instructions, and troubleshooting.
 
 ## Protocol
 
