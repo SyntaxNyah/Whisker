@@ -27,11 +27,29 @@ import std::thread;
 // ============================================================
 
 extern fn int getpeername(int sock, void* addr, int* addrlen);
+extern fn int setsockopt(int sock, int level, int optname, void* optval, int optlen);
+extern fn long c_send(int sock, char* buf, usz len, int flags) @cname("send");
+
+const int SOL_TCP     = 6;
+const int TCP_NODELAY = 1;
+
+// Disable Nagle's algorithm so small packets (like the 21-byte decryptor)
+// are sent immediately instead of being buffered. Go (Athena) does this by
+// default; without it, localhost connections can stall because the client
+// never receives the decryptor and the handshake deadlocks.
+fn void set_tcp_nodelay(int fd) {
+    int one = 1;
+    setsockopt(fd, SOL_TCP, TCP_NODELAY, &one, 4);
+}
+
+fn int get_raw_fd(tcp::TcpSocket* sock) {
+    return *(int*)sock;
+}
 
 fn String extract_peer_ip(tcp::TcpSocket* sock) {
     char[28] addr_buf;
     int addrlen = 28;
-    int raw = *(int*)sock;
+    int raw = get_raw_fd(sock);
 
     if (getpeername(raw, &addr_buf[0], &addrlen) != 0) return "unknown";
 
@@ -190,6 +208,7 @@ fn void? Server.run(&self) {
             continue;
         }
 
+        set_tcp_nodelay(get_raw_fd(&incoming));
         String ip = extract_peer_ip(&incoming);
         self.handle_new_connection(incoming, false, ip);
     }
@@ -247,8 +266,11 @@ fn void Server.handle_new_connection(&self, tcp::TcpSocket socket, bool is_webso
     io::printfn("[server] New %s connection from %s (slot %d)",
         is_websocket ? "WebSocket" : "TCP", ipid, slot);
 
-    // Send the decryptor (tells client: no FantaCrypt encryption)
-    c.send_raw(config::DECRYPTOR_PACKET);
+    // Send the decryptor directly via C send() to guarantee immediate delivery.
+    // C3's socket.write() may buffer; the client won't proceed until it
+    // receives this packet, so it must go out on the wire right away.
+    int fd = get_raw_fd(&c.socket);
+    c_send(fd, config::DECRYPTOR_PACKET.ptr, config::DECRYPTOR_PACKET.len, 0);
 
     // Spawn a thread to handle this client
     ClientThreadArgs* args = mem::new(ClientThreadArgs);
@@ -308,7 +330,8 @@ fn int ws_listener_thread(void* arg) {
         tcp::TcpSocket? incoming = tcp::accept(&ws_server);
         if (catch incoming) continue;
 
-        // Extract peer IP from socket, then let handshake override with proxy headers
+        // Disable Nagle buffering and extract peer IP
+        set_tcp_nodelay(get_raw_fd(&incoming));
         String peer_ip = extract_peer_ip(&incoming);
         websocket::WsHandshakeResult? hs = websocket::perform_handshake(
             &incoming, peer_ip,
