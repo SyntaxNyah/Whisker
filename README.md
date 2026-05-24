@@ -78,7 +78,7 @@ For detailed step-by-step setup instructions with commands, see the [WSS Setup G
 ## Plugins
 
 Drop compiled plugin libraries (`.so` / `.dll`) into `plugins/`.
-See [`plugins/README.md`](plugins/README.md) for the plugin development guide.
+See the [Plugin Dev Guide](plugins/PLUGIN%20DEV%20GUIDE%20README.md) for the full development guide.
 
 The plugin system is the answer to AO server fork fragmentation. Instead of
 forking the whole server to add features, write a plugin. Ship it separately.
@@ -86,9 +86,9 @@ Everyone benefits.
 
 ## Protocol
 
-Whisker implements the AO2 protocol as documented by the Attorney Online project.
+Whisker implements the AO2 protocol. For a complete, plain-English reference of every packet, the handshake sequence, wire format, and more, see the [AO2 Protocol Reference](docs/AO2_PROTOCOL.md).
 
-**Protocol documentation**: [AO2 Protocol Docs](https://github.com/AttorneyOnline/docs)
+**Upstream protocol documentation**: [AO2 Protocol Docs](https://github.com/AttorneyOnline/docs)
 by OmniTroid ([@omnitroid](https://github.com/omnitroid)) and the
 [Attorney Online dev team](https://github.com/AttorneyOnline)
 
@@ -145,8 +145,10 @@ src/
 |-------|-------------|
 | [Build Guide](docs/BUILD_GUIDE.md) | Installing C3, building, running, config, testing |
 | [WSS Setup Guide](docs/WSS_SETUP.md) | Cloudflare Tunnel, nginx + Let's Encrypt, Direct TLS |
-| [Plugin Dev Guide](plugins/README.md) | Writing plugins with 9 copy-paste examples |
-| [Development Guide](DEVELOPMENT.md) | C3 crash course, architecture deep-dive, code patterns |
+| [AO2 Protocol Reference](docs/AO2_PROTOCOL.md) | Every packet documented, wire format, handshake, security |
+| [Plugin Dev Guide](plugins/PLUGIN%20DEV%20GUIDE%20README.md) | Writing plugins with 9 copy-paste examples |
+| [Mod Guide](docs/MOD_GUIDE.md) | Server administration, commands, permissions, bans |
+| [Development Guide](docs/DEVELOPMENT%20GUIDE%20FOR%20C3%20DEVS.md) | C3 crash course, architecture deep-dive, code patterns |
 
 ## License
 

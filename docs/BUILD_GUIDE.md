@@ -525,7 +525,7 @@ cp build/libmy_plugin.so /path/to/whisker/plugins/
 # (hot-reload is not supported yet — you need to restart)
 ```
 
-See `plugins/README.md` for 9 complete copy-paste plugin examples including a
+See the [Plugin Dev Guide](../plugins/PLUGIN%20DEV%20GUIDE%20README.md) for 9 complete copy-paste plugin examples including a
 Magic 8-Ball, profanity filter, AFK detector, and more.
 
 ## Troubleshooting
@@ -637,6 +637,7 @@ grep "kicked" server.log                  # Search for moderation actions
 
 ## Next Steps
 
+- [AO2 Protocol Reference](AO2_PROTOCOL.md) — Every packet documented, wire format, handshake, security
 - [WSS Setup Guide](WSS_SETUP.md) — Set up secure WebSocket with nginx/Cloudflare
-- [Plugin Development Guide](../plugins/README.md) — Write plugins to extend Whisker
-- [Development Guide](../DEVELOPMENT.md) — Deep dive into the codebase
+- [Plugin Development Guide](../plugins/PLUGIN%20DEV%20GUIDE%20README.md) — Write plugins to extend Whisker
+- [Development Guide](DEVELOPMENT%20GUIDE%20FOR%20C3%20DEVS.md) — Deep dive into the codebase

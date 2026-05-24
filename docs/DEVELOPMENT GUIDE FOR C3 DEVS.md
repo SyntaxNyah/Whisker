@@ -446,7 +446,7 @@ if (header == "XY") { handle_xy(srv, c, pkt); return; }
 
 ## Writing a Plugin
 
-This is the recommended way to add features. See `plugins/README.md` for
+This is the recommended way to add features. See the [Plugin Dev Guide](../plugins/PLUGIN%20DEV%20GUIDE%20README.md) for
 the full guide. Here's the short version:
 
 1. Create a C3 dynamic library project
@@ -582,7 +582,7 @@ This is the same approach used by Nyathena, KFO-Server, and other AO2 servers.
 
 ### Prerequisites
 
-- Install C3: https://c3-lang.org/ (see [Build Guide](docs/BUILD_GUIDE.md) for step-by-step)
+- Install C3: https://c3-lang.org/ (see [Build Guide](BUILD_GUIDE.md) for step-by-step)
 - Clone this repo
 
 ### Build
@@ -749,11 +749,13 @@ Full protocol docs: [github.com/AttorneyOnline/docs](https://github.com/Attorney
 
 ## Further Reading
 
+- [AO2 Protocol Reference](AO2_PROTOCOL.md) — Every packet documented, wire format, handshake, security
 - [C3 Language Documentation](https://c3-lang.org/)
-- [AO2 Protocol Reference](https://github.com/AttorneyOnline/docs)
-- [Plugin Development Guide](plugins/README.md)
-- [Build Guide](docs/BUILD_GUIDE.md) — Installing, building, running, testing
-- [WSS Setup Guide](docs/WSS_SETUP.md) — Cloudflare Tunnel, nginx + Let's Encrypt
+- [Upstream AO2 Protocol Spec](https://github.com/AttorneyOnline/docs)
+- [Plugin Development Guide](../plugins/PLUGIN%20DEV%20GUIDE%20README.md)
+- [Build Guide](BUILD_GUIDE.md) — Installing, building, running, testing
+- [WSS Setup Guide](WSS_SETUP.md) — Cloudflare Tunnel, nginx + Let's Encrypt
+- [Mod Guide](MOD_GUIDE.md) — Server administration and moderation
 - [Cloudflare Tunneling for AO](https://github.com/AttorneyOnline/docs/blob/master/docs/Server%20Hosting/cloudflare-tunneling.md)
 - [Secure WebSockets Setup](https://github.com/AttorneyOnline/docs/blob/master/docs/Server%20Hosting/secure-websockets.md)
 - [webao.miku.pizza](https://webao.miku.pizza) — LemmyAO's webAO fork (solves HTTPS mixed-content issue)

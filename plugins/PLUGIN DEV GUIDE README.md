@@ -1292,3 +1292,13 @@ registers a command with the same name as a built-in, your plugin wins.
 Packet hooks run BEFORE the default handler. Multiple plugins can hook
 the same packet — they run in load order. If any hook returns `true`,
 later hooks and the default handler are skipped.
+
+---
+
+## Further Reading
+
+- [AO2 Protocol Reference](../docs/AO2_PROTOCOL.md) — Every packet documented, wire format, handshake, security
+- [Build Guide](../docs/BUILD_GUIDE.md) — Installing C3, building and running Whisker
+- [Development Guide](../docs/DEVELOPMENT%20GUIDE%20FOR%20C3%20DEVS.md) — C3 crash course, architecture deep-dive
+- [WSS Setup Guide](../docs/WSS_SETUP.md) — Cloudflare Tunnel, nginx + Let's Encrypt, Direct TLS
+- [Mod Guide](../docs/MOD_GUIDE.md) — Server administration and moderation

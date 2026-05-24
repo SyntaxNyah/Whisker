@@ -505,6 +505,8 @@ When the server starts, it logs which plugins were loaded:
 
 See the [Plugin Dev Guide](../plugins/PLUGIN%20DEV%20GUIDE%20README.md) for the full development guide with 9 copy-paste examples.
 
+For details on how packets work under the hood, see the [AO2 Protocol Reference](AO2_PROTOCOL.md).
+
 ---
 
 ## Reverse Proxy and WSS

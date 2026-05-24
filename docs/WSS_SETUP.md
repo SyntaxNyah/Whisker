@@ -603,7 +603,9 @@ sudo ss -tlnp | grep :443   # check again
 
 ## Further Reading
 
+- [AO2 Protocol Reference](AO2_PROTOCOL.md) — Every packet documented, wire format, handshake, security
 - [Build Guide](BUILD_GUIDE.md) — Building Whisker from source
+- [Mod Guide](MOD_GUIDE.md) — Server administration and moderation
 - [Cloudflare Tunnel Docs](https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/)
 - [nginx WebSocket Proxying](https://nginx.org/en/docs/http/websocket.html)
 - [certbot Instructions](https://certbot.eff.org/)
