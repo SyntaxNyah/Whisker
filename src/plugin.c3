@@ -36,28 +36,26 @@ import std::io;
 // C interop — shared library loading (platform-conditional)
 // ============================================================
 
-// Shared library loading
-$if env::os == WIN32:
-    extern fn void* LoadLibraryA(char* path);
-    extern fn void* GetProcAddress(void* module, char* name);
-    extern fn int FreeLibrary(void* module);
-$else
-    extern fn void* dlopen(char* path, int flags);
-    extern fn void* dlsym(void* handle, char* name);
-    extern fn int dlclose(void* handle);
-    extern fn char* dlerror();
+// Shared library loading — Windows
+extern fn void* load_library_a(char* path) @cname("LoadLibraryA") @if(env::WIN32);
+extern fn void* get_proc_address(void* module, char* name) @cname("GetProcAddress") @if(env::WIN32);
+extern fn int free_library(void* module) @cname("FreeLibrary") @if(env::WIN32);
 
-    const int RTLD_NOW = 2;
-$endif
+// Shared library loading — POSIX
+extern fn void* dlopen(char* path, int flags) @if(!env::WIN32);
+extern fn void* dlsym(void* handle, char* name) @if(!env::WIN32);
+extern fn int dlclose(void* handle) @if(!env::WIN32);
+extern fn char* dlerror() @if(!env::WIN32);
 
-// Directory scanning via shell command
-$if env::os == WIN32:
-    extern fn void* _popen(char* cmd, char* mode);
-    extern fn int _pclose(void* stream);
-$else
-    extern fn void* popen(char* cmd, char* mode);
-    extern fn int pclose(void* stream);
-$endif
+const int RTLD_NOW = 2;
+
+// Directory scanning — Windows
+extern fn void* win_popen(char* cmd, char* mode) @cname("_popen") @if(env::WIN32);
+extern fn int win_pclose(void* stream) @cname("_pclose") @if(env::WIN32);
+
+// Directory scanning — POSIX
+extern fn void* popen(char* cmd, char* mode) @if(!env::WIN32);
+extern fn int pclose(void* stream) @if(!env::WIN32);
 
 extern fn char* fgets(char* buf, int n, void* stream);
 
@@ -247,9 +245,9 @@ fn void load_all(PluginManager* pm, PluginAPI* api, String directory) {
 
     // Use a shell command to list plugin files in the directory.
     // Windows: dir /b *.dll    POSIX: ls -1 *.so
-    $if env::os == WIN32:
+    $if env::WIN32:
         String cmd = string::tformat("dir /b \"%s\\*.dll\" 2>nul", directory);
-        void* pipe = _popen(cmd.ptr, "r".ptr);
+        void* pipe = win_popen(cmd.ptr, "r".ptr);
     $else
         String cmd = string::tformat("ls -1 \"%s/\"*.so 2>/dev/null", directory);
         void* pipe = popen(cmd.ptr, "r".ptr);
@@ -266,7 +264,7 @@ fn void load_all(PluginManager* pm, PluginAPI* api, String directory) {
             String name = (String)name_buf[0..len - 1];
 
             // Build full path to the plugin file
-            $if env::os == WIN32:
+            $if env::WIN32:
                 // dir /b gives just filenames — prepend directory
                 String full_path = string::tformat("%s\\%s", directory, name);
             $else
@@ -277,8 +275,8 @@ fn void load_all(PluginManager* pm, PluginAPI* api, String directory) {
             load_single(pm, api, full_path);
         }
 
-        $if env::os == WIN32:
-            _pclose(pipe);
+        $if env::WIN32:
+            win_pclose(pipe);
         $else
             pclose(pipe);
         $endif
@@ -296,14 +294,14 @@ fn void load_single(PluginManager* pm, PluginAPI* api, String path) {
     }
 
     // Open the shared library
-    $if env::os == WIN32:
-        void* handle = LoadLibraryA(path.ptr);
+    $if env::WIN32:
+        void* handle = load_library_a(path.ptr);
     $else
         void* handle = dlopen(path.ptr, RTLD_NOW);
     $endif
 
     if (handle == null) {
-        $if env::os == WIN32:
+        $if env::WIN32:
             io::printfn("[plugins] Failed to load: %s", path);
         $else
             char* err = dlerror();
@@ -317,10 +315,10 @@ fn void load_single(PluginManager* pm, PluginAPI* api, String path) {
     }
 
     // Look up required exported functions
-    $if env::os == WIN32:
-        void* info_ptr     = GetProcAddress(handle, "whisker_plugin_info".ptr);
-        void* init_ptr     = GetProcAddress(handle, "whisker_plugin_init".ptr);
-        void* shutdown_ptr = GetProcAddress(handle, "whisker_plugin_shutdown".ptr);
+    $if env::WIN32:
+        void* info_ptr     = get_proc_address(handle, "whisker_plugin_info".ptr);
+        void* init_ptr     = get_proc_address(handle, "whisker_plugin_init".ptr);
+        void* shutdown_ptr = get_proc_address(handle, "whisker_plugin_shutdown".ptr);
     $else
         void* info_ptr     = dlsym(handle, "whisker_plugin_info".ptr);
         void* init_ptr     = dlsym(handle, "whisker_plugin_init".ptr);
@@ -329,8 +327,8 @@ fn void load_single(PluginManager* pm, PluginAPI* api, String path) {
 
     if (info_ptr == null || init_ptr == null) {
         io::printfn("[plugins] '%s' missing required exports (whisker_plugin_info / whisker_plugin_init).", path);
-        $if env::os == WIN32:
-            FreeLibrary(handle);
+        $if env::WIN32:
+            free_library(handle);
         $else
             dlclose(handle);
         $endif
@@ -374,8 +372,8 @@ fn void unload_all(PluginManager* pm) {
     // Close all library handles
     for (int i = 0; i < pm.plugin_count; i++) {
         if (pm.handles[i] != null) {
-            $if env::os == WIN32:
-                FreeLibrary(pm.handles[i]);
+            $if env::WIN32:
+                free_library(pm.handles[i]);
             $else
                 dlclose(pm.handles[i]);
             $endif
