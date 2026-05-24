@@ -821,6 +821,381 @@ One-liner for the build-deploy-restart cycle:
 c3c build && cp build/libmy_cool_plugin.so /path/to/whisker/plugins/ && echo "Deployed! Restart Whisker."
 ```
 
+## Building Standalone Plugins (Without the Server Source)
+
+The examples above use `import whisker::plugin` and `import whisker::client` — these work when you're building alongside the server source. But if you want to build a plugin **standalone** (your own separate project, no Whisker source tree), you need to define the plugin interface structs yourself.
+
+This is the normal way to distribute plugins. The server loads your `.dll`/`.so` at runtime and calls the exported functions by name — it doesn't care how you defined the structs internally, as long as the memory layout matches.
+
+### What to define locally
+
+```c3
+module my_standalone_plugin;
+
+import std::io;
+
+// -- Define the plugin interface structs yourself --
+
+struct PluginInfo {
+    String name;
+    String version;
+    String author;
+    String description;
+}
+
+struct PluginAPI {
+    void* manager;  // Opaque pointer — only needed if you call register_command/register_hook
+}
+
+// -- Now export the three required functions --
+
+fn PluginInfo whisker_plugin_info() @export("whisker_plugin_info") {
+    return {
+        .name        = "My Plugin",
+        .version     = "1.0.0",
+        .author      = "Your Name",
+        .description = "Does cool stuff",
+    };
+}
+
+fn bool whisker_plugin_init(PluginAPI* api) @export("whisker_plugin_init") {
+    io::printn("[my_plugin] Loaded!");
+    return true;
+}
+
+fn void whisker_plugin_shutdown() @export("whisker_plugin_shutdown") {}
+```
+
+**Key differences from the in-tree examples:**
+- No `import whisker::*` — you define `PluginInfo` and `PluginAPI` yourself
+- Struct return uses `return { .field = value }` (type is inferred from the function signature)
+- If your plugin doesn't register commands or hooks, `PluginAPI` can just hold an opaque `void*`
+
+### When you DO need commands/hooks in standalone mode
+
+If your standalone plugin registers commands or hooks via the API, you'll need to match the full `PluginAPI` struct layout so the function pointers resolve correctly. The safest approach is to copy the relevant struct definitions from `src/plugin.c3` and `src/client.c3` into your plugin.
+
+For simple plugins that just run background tasks (like the Server Advertiser), the opaque `void* manager` is enough.
+
+---
+
+## project.json Reference
+
+When you run `c3c init my_plugin --template dynamic-lib`, it generates a `project.json`. Here's what a clean one looks like for a plugin:
+
+```json
+{
+  "langrev": "1",
+  "warnings": [ "no-unused" ],
+  "dependency-search-paths": [ "lib" ],
+  "dependencies": [ ],
+  "authors": [ "Your Name" ],
+  "version": "1.0.0",
+  "sources": [ "src/**" ],
+  "output": "build",
+  "targets": {
+    "my_plugin": {
+      "type": "dynamic-lib"
+    }
+  },
+  "opt": "O2"
+}
+```
+
+**Important:** `"type": "dynamic-lib"` goes inside the target, not at the top level. This is what tells c3c to produce a `.dll`/`.so` instead of an executable.
+
+### Project structure
+
+```
+my_plugin/
+  project.json
+  src/
+    my_plugin.c3
+  build/                  ← created by c3c
+    my_plugin.dll         ← this goes into plugins/
+```
+
+---
+
+## Quick Build Without a Project
+
+If you don't want to set up a `project.json` at all, c3c can compile a single file directly into a dynamic library:
+
+```bash
+c3c dynamic-lib src/my_plugin.c3 -o build
+```
+
+This is the fastest way to go from source to `.dll`/`.so`. No project file, no init, just compile.
+
+**Caveats:**
+- You can't use `import whisker::*` (the server modules aren't available) — use the standalone approach above
+- Some C3 versions have a bug where `$$PROJECT_PATH` isn't defined without a project file — see Troubleshooting below
+
+---
+
+## Calling C Functions from Plugins
+
+C3 has seamless C interop. If you need functionality from the C standard library (or any C library), just declare the function with `extern fn`:
+
+```c3
+// Declare C's system() — runs a shell command
+extern fn CInt system(ZString cmd);
+
+// Declare C's getenv() — read environment variables
+extern fn ZString getenv(ZString name);
+```
+
+Then call them like any other function:
+
+```c3
+fn void do_something() {
+    system("echo hello from C3");
+
+    ZString home = getenv("HOME");
+    if (home != null) {
+        io::printfn("Home: %s", (String)home);
+    }
+}
+```
+
+### String types for C interop
+
+C3 has two string types — knowing the difference matters when calling C functions:
+
+| Type | What it is | When to use |
+|------|-----------|-------------|
+| `String` | Slice (pointer + length) | Normal C3 code, `io::printfn`, `string::tformat` |
+| `ZString` | Null-terminated `char*` | Passing to C functions (`system`, `getenv`, etc.) |
+
+**Converting between them:**
+
+```c3
+// String → ZString (for C functions)
+ZString z = string::tformat_zstr("hello %s", name);  // temp-allocated, null-terminated
+
+// ZString → String (for C3 code)
+String s = (String)some_zstring;
+```
+
+### Real-world example: HTTP POST via curl
+
+The Server Advertiser plugin uses this to send heartbeats:
+
+```c3
+extern fn CInt system(ZString cmd);
+
+fn bool post_to_url(String url, String body) {
+    ZString cmd = string::tformat_zstr(
+        `curl -sf --max-time 10 -X POST -H "Content-Type: application/x-www-form-urlencoded" -d "%s" "%s"`,
+        body, url
+    );
+    return system(cmd) == 0;
+}
+```
+
+---
+
+## Threading in Plugins
+
+If your plugin needs background tasks (heartbeats, polling, timers), use `std::thread`:
+
+```c3
+import std::thread;
+import std::time;
+
+fn bool whisker_plugin_init(PluginAPI* api) @export("whisker_plugin_init") {
+    Thread worker;
+    if (catch worker.create(&my_background_task, null)) {
+        io::printn("[my_plugin] Failed to start thread.");
+        return false;
+    }
+    worker.detach();  // Let it run independently
+    return true;
+}
+
+fn int my_background_task(void* arg) {
+    while (true) {
+        // Do work...
+        thread::sleep(time::sec(30));  // Sleep 30 seconds
+    }
+    return 0;
+}
+```
+
+### Duration helpers
+
+`Duration` is a typedef for `long` (microseconds). Use the helper functions:
+
+```c3
+time::sec(5)       // 5 seconds
+time::ms(500)      // 500 milliseconds
+time::min(2)       // 2 minutes
+time::hour(1)      // 1 hour
+```
+
+### Error handling with `catch`
+
+Thread creation can fail. Use `catch` in an `if` to handle it:
+
+```c3
+// This runs the "error" block if .create() fails
+if (catch worker.create(&my_fn, null)) {
+    // Handle error
+    return false;
+}
+// Success — thread is running
+worker.detach();
+```
+
+**Common mistake:** Don't use `!catch` — it doesn't work in current C3. Flip the logic: put the error case inside the `if (catch ...)` block, and the success case after it.
+
+---
+
+## C3 Syntax Quick Reference (for Plugin Authors)
+
+If you're coming from C/C++/Rust, here are the C3 patterns you'll use most often in plugins:
+
+### Struct initialization
+
+```c3
+// In a return statement (type inferred from function signature):
+fn PluginInfo whisker_plugin_info() @export("whisker_plugin_info") {
+    return {
+        .name    = "My Plugin",
+        .version = "1.0.0",
+        .author  = "Me",
+        .description = "Cool stuff",
+    };
+}
+
+// In a variable declaration (type inferred from the variable type):
+PluginInfo info = { .name = "My Plugin", .version = "1.0.0", .author = "Me", .description = "Cool stuff" };
+```
+
+**Don't** put the type name before the braces in a return:
+```c3
+// WRONG — won't compile:
+return PluginInfo { .name = "My Plugin", ... };
+
+// RIGHT — type is inferred:
+return { .name = "My Plugin", ... };
+```
+
+### Formatted strings
+
+```c3
+// Temp-allocated String (for C3 code):
+String msg = string::tformat("Player %d joined area %d", uid, area);
+
+// Temp-allocated ZString (for C functions):
+ZString cmd = string::tformat_zstr("curl %s", url);
+```
+
+### Building strings dynamically
+
+```c3
+DString buf = dstring::temp();           // Temp-allocated, no need to free
+buf.append_string("hello ");
+buf.append_string("world");
+String result = buf.str_view();          // Get the built string
+```
+
+### Exporting functions
+
+Every exported plugin function needs `@export("name")`:
+
+```c3
+fn PluginInfo whisker_plugin_info() @export("whisker_plugin_info") { ... }
+fn bool whisker_plugin_init(PluginAPI* api) @export("whisker_plugin_init") { ... }
+fn void whisker_plugin_shutdown() @export("whisker_plugin_shutdown") { ... }
+```
+
+The string in `@export()` is the symbol name the server looks for. It **must** match exactly.
+
+---
+
+## Troubleshooting Build Errors
+
+### `$$PROJECT_PATH was not defined`
+
+```
+(lib/std/core/env.c3) Error: The compiler constant 'PROJECT_PATH' was not defined
+```
+
+This is a bug in C3 0.8.0 on Windows. The compiler doesn't set `$$PROJECT_PATH` even with a valid `project.json`. **Workaround:** open `<c3c install>/lib/std/core/env.c3`, find this line:
+
+```c3
+const String PROJECT_PATH = $$PROJECT_PATH;
+```
+
+Replace it with:
+
+```c3
+const String PROJECT_PATH = ".";
+```
+
+This is harmless — `PROJECT_PATH` is rarely used by plugin code.
+
+### `'time::sleep' could not be found`
+
+Sleep lives in `std::thread`, not `std::time`. Use:
+
+```c3
+import std::thread;
+import std::time;
+
+thread::sleep(time::sec(5));    // Correct
+// time::sleep(...)             // Wrong — doesn't exist
+```
+
+### `zstr_copy expected a parameter of type 'Allocator'`
+
+`String.zstr_copy()` requires an allocator. Use `tformat_zstr` instead for temp-allocated null-terminated strings:
+
+```c3
+// Instead of:
+ZString z = some_string.zstr_copy();        // Won't compile — missing allocator
+
+// Use:
+ZString z = string::tformat_zstr("%s", some_string);  // Works — temp-allocated
+```
+
+### `@extern is not a known valid attribute name`
+
+The attribute for setting C symbol names is `@cname`, not `@extern`. But for `extern fn` declarations where the C3 function name already matches the C name, you don't need any attribute at all:
+
+```c3
+// Just declare it — "system" already matches the C symbol name
+extern fn CInt system(ZString cmd);
+```
+
+### `An expression was expected` (struct initialization)
+
+Don't put the type name before braces in a return statement:
+
+```c3
+// WRONG:
+return PluginInfo { .name = "...", ... };
+
+// RIGHT:
+return { .name = "...", ... };
+```
+
+### Plugin loads but commands don't work
+
+1. Check that your `@export` names match exactly: `"whisker_plugin_info"`, `"whisker_plugin_init"`, `"whisker_plugin_shutdown"`
+2. Check the server console for `[plugins] Loaded: ...` — if your plugin isn't listed, the file wasn't found or failed to load
+3. Make sure you built as `dynamic-lib`, not `executable`
+4. On Linux, the file must be `.so`. On Windows, `.dll`
+
+### Plugin crashes the server on load
+
+1. Make sure your struct layouts match what the server expects (especially `PluginInfo` — 4 Strings in order: name, version, author, description)
+2. Return `false` from `whisker_plugin_init` if setup fails — don't let it crash
+3. Check for null pointers in your init code
+
+---
+
 ## Architecture Notes
 
 Plugins are loaded once at server startup via `dlopen`/`LoadLibrary`.
