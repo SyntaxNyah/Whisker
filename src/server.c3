@@ -267,12 +267,10 @@ fn void Server.handle_new_connection(&self, tcp::TcpSocket socket, bool is_webso
     io::printfn("[server] New %s connection from %s (slot %d)",
         is_websocket ? "WebSocket" : "TCP", ipid, slot);
 
-    // Send the decryptor directly via C send() to guarantee immediate delivery.
-    // C3's socket.write() may buffer; the client won't proceed until it
-    // receives this packet, so it must go out on the wire right away.
-    int fd = get_raw_fd(&c.socket);
-    long sent = c_send(fd, config::DECRYPTOR_PACKET.ptr, config::DECRYPTOR_PACKET.len, 0);
-    io::printfn("[debug] Decryptor send: fd=%d sent=%d bytes", fd, (int)sent);
+    // Send the decryptor. send_raw handles both TCP (direct C send) and
+    // WebSocket (proper text frame) — must go through send_raw so WS
+    // clients receive a valid frame, not raw bytes.
+    c.send_raw(config::DECRYPTOR_PACKET);
 
     // Spawn a thread to handle this client
     ClientThreadArgs* args = mem::new(ClientThreadArgs);
@@ -366,10 +364,6 @@ fn int ws_listener_thread(void* arg) {
 fn void client_handler(Server* server, client::Client* c) {
     char[4096] read_buf;
 
-    int handler_fd = get_raw_fd(&c.socket);
-    io::printfn("[debug] Handler thread started for %s (fd=%d, ws=%s)",
-        c.ipid, handler_fd, c.is_websocket ? "yes" : "no");
-
     // Handshake timeout: client must join within HANDSHAKE_TIMEOUT_MS
     long deadline = security::current_time_sec() + config::HANDSHAKE_TIMEOUT_MS / 1000;
 
@@ -405,10 +399,7 @@ fn void client_handler(Server* server, client::Client* c) {
             // TCP: read raw bytes via C recv() directly
             int rfd = get_raw_fd(&c.socket);
             long n = c_recv(rfd, &read_buf[0], 4096, 0);
-            if (n <= 0) {
-                io::printfn("[debug] recv returned %d for %s (fd=%d)", (int)n, c.ipid, rfd);
-                break;
-            }
+            if (n <= 0) break;
             sz bytes_read = (sz)n;
 
             c.last_activity = security::current_time_sec();
