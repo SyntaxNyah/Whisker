@@ -610,4 +610,4 @@ sudo ss -tlnp | grep :443   # check again
 - [nginx WebSocket Proxying](https://nginx.org/en/docs/http/websocket.html)
 - [certbot Instructions](https://certbot.eff.org/)
 - [AO2 Cloudflare Tunneling Guide](https://github.com/AttorneyOnline/docs) — by OmniTroid and the AO dev team
-- [webao.miku.pizza](https://webao.miku.pizza) — LemmyAO's webAO fork that handles the HTTPS/ws:// issue
+- [webao.miku.pizza](https://webao.miku.pizza) — LemmyAO. SyntaxNyah's webAO fork that handles the HTTPS/ws:// issue and other features.
