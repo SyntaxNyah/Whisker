@@ -38,28 +38,28 @@ import std::io;
 
 // Shared library loading
 $if env::os == WIN32:
-    extern fn void* LoadLibraryA(char* path) @extern("LoadLibraryA");
-    extern fn void* GetProcAddress(void* module, char* name) @extern("GetProcAddress");
-    extern fn int FreeLibrary(void* module) @extern("FreeLibrary");
+    extern fn void* LoadLibraryA(char* path);
+    extern fn void* GetProcAddress(void* module, char* name);
+    extern fn int FreeLibrary(void* module);
 $else
-    extern fn void* dlopen(char* path, int flags) @extern("dlopen");
-    extern fn void* dlsym(void* handle, char* name) @extern("dlsym");
-    extern fn int dlclose(void* handle) @extern("dlclose");
-    extern fn char* dlerror() @extern("dlerror");
+    extern fn void* dlopen(char* path, int flags);
+    extern fn void* dlsym(void* handle, char* name);
+    extern fn int dlclose(void* handle);
+    extern fn char* dlerror();
 
     const int RTLD_NOW = 2;
 $endif
 
 // Directory scanning via shell command
 $if env::os == WIN32:
-    extern fn void* _popen(char* cmd, char* mode) @extern("_popen");
-    extern fn int _pclose(void* stream) @extern("_pclose");
+    extern fn void* _popen(char* cmd, char* mode);
+    extern fn int _pclose(void* stream);
 $else
-    extern fn void* popen(char* cmd, char* mode) @extern("popen");
-    extern fn int pclose(void* stream) @extern("pclose");
+    extern fn void* popen(char* cmd, char* mode);
+    extern fn int pclose(void* stream);
 $endif
 
-extern fn char* fgets(char* buf, int n, void* stream) @extern("fgets");
+extern fn char* fgets(char* buf, int n, void* stream);
 
 // ============================================================
 // Plugin export function pointer types

@@ -26,21 +26,12 @@ import std::thread;
 // Peer IP extraction — getpeername via C interop
 // ============================================================
 
-$if env::os == WIN32:
-    extern fn int getpeername(usz sock, void* addr, int* addrlen) @extern("getpeername");
-$else
-    extern fn int getpeername(int sock, void* addr, int* addrlen) @extern("getpeername");
-$endif
+extern fn int getpeername(int sock, void* addr, int* addrlen);
 
 fn String extract_peer_ip(tcp::TcpSocket* sock) {
     char[28] addr_buf;
     int addrlen = 28;
-
-    $if env::os == WIN32:
-        usz raw = *(usz*)sock;
-    $else
-        int raw = *(int*)sock;
-    $endif
+    int raw = *(int*)sock;
 
     if (getpeername(raw, &addr_buf[0], &addrlen) != 0) return "unknown";
 
