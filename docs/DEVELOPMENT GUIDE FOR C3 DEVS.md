@@ -616,7 +616,7 @@ Output binary: `build/whisker` (or `build/whisker.exe` on Windows)
 3. Open webAO: `https://web.aceattorneyonline.com/client.html?mode=join&connect=ws://localhost:27017`
 4. If the official webAO gives you mixed-content errors (HTTPS page trying to connect
    to ws://), use [webao.miku.pizza](https://webao.miku.pizza) instead — it's a fork
-   by LemmyAO that handles the HTTP/HTTPS issue.
+   by SyntaxNyah that handles the HTTP/HTTPS issue.
 
 ### Quick Network Tests
 
