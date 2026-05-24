@@ -2,13 +2,23 @@
 
 This folder contains **ready-to-use plugins** that add extra features to your Whisker server. They are completely optional -- your server works fine without them. Each plugin is already built and just needs to be dropped into your `plugins/` folder.
 
+## Folder Structure
+
+```
+OPTIONAL Plugins/
+  Windows/          ← .dll files for Windows servers
+  Linux/            ← .so files for Linux servers
+  *.c3              ← source code (learning exercise)
+```
+
 ## How to Use
 
 **To install a plugin:**
 
-1. Drag the plugin's `.so` (Linux) or `.dll` (Windows) file into your server's `plugins/` directory
-2. Edit `config/config.toml` if the plugin requires configuration (check the plugin's section below)
-3. Restart your server
+1. Open the `Windows/` or `Linux/` folder (whichever matches your server)
+2. Drag the plugin file into your server's `plugins/` directory
+3. Edit `config/config.toml` if the plugin requires configuration (check the plugin's section below)
+4. Restart your server
 
 **To remove a plugin:**
 
@@ -24,7 +34,8 @@ Delete this entire `OPTIONAL Plugins` folder. It won't affect your server.
 
 ### Server Advertiser
 
-**Files:** `server_advertiser.dll` (compiled) · `server_advertiser.c3` (source)
+**Compiled:** `Windows/server_advertiser.dll` · `Linux/server_advertiser.so`
+**Source:** `server_advertiser.c3`
 
 Advertises your server to the Attorney Online master server so players can find it in the public server browser. Without this plugin, your server is unlisted -- players can only connect by entering your IP and port manually.
 
@@ -32,7 +43,7 @@ The `.c3` source file is included as a learning exercise -- if you want to try c
 
 **Setup:**
 
-1. Drop the compiled plugin into your `plugins/` directory
+1. Grab the `.dll` or `.so` from the appropriate folder and drop it into your server's `plugins/` directory
 2. Add the following to your `config/config.toml`:
 
 ```toml

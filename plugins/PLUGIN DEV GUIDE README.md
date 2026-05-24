@@ -11,6 +11,28 @@ to solve this: extend the server without modifying core code.
 Want to add custom moderation commands? A casino system? A Discord bot bridge?
 Write a plugin. Ship it separately. Everyone benefits.
 
+## Installing C3
+
+You need the C3 compiler (`c3c`) to build plugins. Grab it from the official releases:
+
+1. Go to [github.com/c3lang/c3c/releases](https://github.com/c3lang/c3c/releases)
+2. Download the zip for your platform:
+   - **Windows:** `c3-windows.zip`
+   - **Linux:** `c3-linux.tar.gz`
+   - **macOS:** `c3-macos.zip`
+3. Extract it somewhere and add the `c3/` directory to your `PATH`
+
+Verify it works:
+
+```bash
+c3c --version
+# Should print: C3 Compiler Version: 0.8.x
+```
+
+That's it. No installer, no dependencies — just the compiler binary and its standard library.
+
+---
+
 ## Quick Start
 
 ### 1. Create a new C3 project for your plugin
@@ -930,6 +952,68 @@ This is the fastest way to go from source to `.dll`/`.so`. No project file, no i
 **Caveats:**
 - You can't use `import whisker::*` (the server modules aren't available) — use the standalone approach above
 - Some C3 versions have a bug where `$$PROJECT_PATH` isn't defined without a project file — see Troubleshooting below
+
+---
+
+## Cross-Compilation (Building for Linux on Windows, or Vice Versa)
+
+c3c uses LLVM under the hood, so it supports cross-compilation. You can build a Linux `.so` on a Windows machine (or the other way around).
+
+### List available targets
+
+```bash
+c3c --list-targets
+# Common ones: linux-x64, windows-x64, linux-aarch64
+```
+
+### Cross-compile with a project
+
+```bash
+c3c build --target linux-x64
+```
+
+### The catch: you need target system libraries
+
+Cross-compiling needs the target platform's C runtime files (`crt1.o`, `crtbeginS.o`, etc.) and system libraries (`libc`, `libpthread`, etc.). Without them, the linker will fail with:
+
+```
+Failed to find the C runtime at link time.
+```
+
+**Workaround for building `.so` plugins on Windows:**
+
+Since plugins are loaded by the server at runtime (which already has libc loaded), you can cross-compile with empty stub files standing in for the system libraries. The linker just needs them to exist — the real symbols resolve at runtime via `dlopen`.
+
+```bash
+# Create a directory with stub CRT and library files
+mkdir -p fake_crt
+touch fake_crt/crt1.o fake_crt/crti.o fake_crt/crtn.o
+touch fake_crt/crtbegin.o fake_crt/crtbeginS.o fake_crt/crtend.o fake_crt/crtendS.o
+touch fake_crt/libc.a fake_crt/libm.a fake_crt/libdl.a
+touch fake_crt/libpthread.a fake_crt/libgcc.a fake_crt/libgcc_s.a
+
+# Build with the stubs
+c3c build --target linux-x64 --linker=builtin \
+    --linux-crt fake_crt --linux-crtbegin fake_crt \
+    -L fake_crt
+```
+
+This produces a valid ELF `.so` that works when loaded by a Linux Whisker server.
+
+**Verify the output:**
+
+```bash
+file build/my_plugin.so
+# Should show: ELF 64-bit LSB shared object, x86-64
+```
+
+### If you have WSL / Docker / a Linux box
+
+The easiest way to build for Linux is to just build on Linux. Install c3c there and run:
+
+```bash
+c3c build   # produces .so natively, no cross-compilation needed
+```
 
 ---
 
