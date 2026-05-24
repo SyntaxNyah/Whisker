@@ -23,6 +23,37 @@ import std::time;
 import std::thread;
 
 // ============================================================
+// Peer IP extraction — getpeername via C interop
+// ============================================================
+
+$if env::os == WIN32:
+    extern fn int getpeername(usz sock, void* addr, int* addrlen) @extern("getpeername");
+$else
+    extern fn int getpeername(int sock, void* addr, int* addrlen) @extern("getpeername");
+$endif
+
+fn String extract_peer_ip(tcp::TcpSocket* sock) {
+    char[28] addr_buf;
+    int addrlen = 28;
+
+    $if env::os == WIN32:
+        usz raw = *(usz*)sock;
+    $else
+        int raw = *(int*)sock;
+    $endif
+
+    if (getpeername(raw, &addr_buf[0], &addrlen) != 0) return "unknown";
+
+    // sockaddr_in: family(2) + port(2) + addr(4)
+    ushort family = *(ushort*)&addr_buf[0];
+    if (family != 2) return "unknown"; // AF_INET = 2
+
+    return string::tformat("%d.%d.%d.%d",
+        (int)(addr_buf[4] & 0xFF), (int)(addr_buf[5] & 0xFF),
+        (int)(addr_buf[6] & 0xFF), (int)(addr_buf[7] & 0xFF));
+}
+
+// ============================================================
 // Server state — the central shared state of Whisker
 // ============================================================
 
@@ -168,7 +199,8 @@ fn void? Server.run(&self) {
             continue;
         }
 
-        self.handle_new_connection(incoming, false);
+        String ip = extract_peer_ip(&incoming);
+        self.handle_new_connection(incoming, false, ip);
     }
 }
 
@@ -176,12 +208,7 @@ fn void? Server.run(&self) {
 // New connection handling
 // ============================================================
 
-fn void Server.handle_new_connection(&self, tcp::TcpSocket socket, bool is_websocket) {
-    // Extract IP address
-    String ip = "unknown";  // TODO: extract from socket peer address
-
-    // Reverse proxy: extract real IP from headers (done during WS handshake)
-    // For TCP, the socket IP is the real IP unless behind a PROXY protocol proxy
+fn void Server.handle_new_connection(&self, tcp::TcpSocket socket, bool is_websocket, String ip) {
 
     // Connection rate limit check
     if (!self.ip_tracker.check_connection(ip)) {
@@ -290,10 +317,10 @@ fn int ws_listener_thread(void* arg) {
         tcp::TcpSocket? incoming = tcp::accept(&ws_server);
         if (catch incoming) continue;
 
-        // Perform WebSocket handshake
-        String ip = "unknown";
+        // Extract peer IP from socket, then let handshake override with proxy headers
+        String peer_ip = extract_peer_ip(&incoming);
         websocket::WsHandshakeResult? hs = websocket::perform_handshake(
-            &incoming, ip,
+            &incoming, peer_ip,
             server.cfg.reverse_proxy_mode,
             server.cfg.trusted_proxy_header
         );
@@ -308,8 +335,8 @@ fn int ws_listener_thread(void* arg) {
             continue;
         }
 
-        // Use real IP from handshake if available
-        server.handle_new_connection(incoming, true);
+        // Use handshake's client_ip (may be updated from proxy headers)
+        server.handle_new_connection(incoming, true, hs.client_ip);
     }
 
     }; // @pool_init
