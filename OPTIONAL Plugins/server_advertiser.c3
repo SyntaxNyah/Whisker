@@ -154,7 +154,7 @@ fn bool whisker_plugin_init(PluginAPI* api) @export("whisker_plugin_init") {
     }
     curl_cmd_buf[i] = 0;
 
-    Thread heartbeat;
+    static Thread heartbeat;
     if (catch heartbeat.create(&heartbeat_loop, null)) {
         io::printn("[advertiser] WARNING: Failed to start heartbeat thread.");
         return false;
