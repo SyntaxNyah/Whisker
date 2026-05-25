@@ -110,17 +110,15 @@ fn bool whisker_plugin_init(PluginAPI* api) @export("whisker_plugin_init") {
     // Pre-build the curl command on the main thread (where C3's temp
     // allocator works). The heartbeat thread will just call system()
     // with this pre-built string — no C3 runtime needed in the thread.
-    String name_enc = url_encode(state.server_name);
-    String desc_enc = url_encode(state.server_description);
-
+    // The AO master server expects a JSON POST body.
     String ws_part = "";
     if (state.ws_enabled) {
-        ws_part = string::tformat("&ws_port=%d", state.ws_port);
+        ws_part = string::tformat(`,\"ws_port\":%d`, state.ws_port);
     }
 
     ZString cmd = string::tformat_zstr(
-        `curl -sf --max-time 10 -X POST -H "Content-Type: application/x-www-form-urlencoded" -d "port=%d&name=%s&description=%s&players=0&max_players=%d%s" "%s"`,
-        state.server_port, name_enc, desc_enc, state.max_players, ws_part, state.masterserver_url
+        `curl -sf --max-time 10 -X POST -H "Content-Type: application/json" -d '{"port":%d,"name":"%s","description":"%s","players":0,"max_players":%d%s}' "%s"`,
+        state.server_port, state.server_name, state.server_description, state.max_players, ws_part, state.masterserver_url
     );
 
     // Copy into static buffer so it survives past this function
@@ -172,24 +170,3 @@ fn int heartbeat_loop(void* arg) {
     return 0;
 }
 
-// ============================================================
-// URL encoding helper
-// ============================================================
-
-fn String url_encode(String input) {
-    DString result = dstring::temp();
-
-    foreach (char c : input) {
-        switch {
-            case c == ' ':
-                result.append_char('+');
-            case (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-                 (c >= '0' && c <= '9') || c == '-' || c == '_' || c == '.':
-                result.append_char(c);
-            default:
-                result.append_string(string::tformat("%%%02X", (int)c));
-        }
-    }
-
-    return result.str_view();
-}
