@@ -161,7 +161,7 @@ fn int heartbeat_loop(void* arg) {
     sleep_c(5);
 
     while (state.running) {
-        CInt result = system(&curl_cmd_buf[0]);
+        CInt result = system((ZString)&curl_cmd_buf[0]);
         if (result == 0) {
             puts("[advertiser] Heartbeat sent successfully.");
         } else {
