@@ -123,7 +123,7 @@ curl -v https://ao.yourdomain.com
 # Test with wscat (best test)
 npm install -g wscat        # install if you haven't already
 wscat --connect wss://ao.yourdomain.com
-# Should see: decryptor#34#%
+# Should see: decryptor#0#%
 # Type anything and press Enter to send a raw packet (it'll probably error, that's fine)
 # Press Ctrl+C to disconnect
 
@@ -349,7 +349,7 @@ echo | openssl s_client -connect ao.yourdomain.com:443 -brief
 
 # 4. Test WebSocket through nginx
 wscat --connect wss://ao.yourdomain.com
-# Should see: decryptor#34#%
+# Should see: decryptor#0#%
 
 # 5. Check nginx access log for your connection
 sudo tail -5 /var/log/nginx/access.log

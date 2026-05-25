@@ -105,7 +105,7 @@ Here's what happens from the moment someone connects to when they're chatting in
 CLIENT                                          SERVER
   |                                                |
   |  ---- TCP connect or WS handshake -----------> |
-  |  <--- decryptor#34#%  (legacy, no encryption)   |
+  |  <--- decryptor#0#%  (legacy, no encryption)   |
   |                                                |
   |  ---- HI#<hardware_id>#% -------------------> |  Ban check happens here
   |  <--- ID#<players>#Whisker#0.1.0#%             |
@@ -150,10 +150,10 @@ These packets happen in order during connection setup. You can't skip any.
 ### decryptor (Server -> Client)
 
 ```
-decryptor#34#%
+decryptor#0#%
 ```
 
-A legacy artifact from when the protocol supported FantaCrypt encryption. The value `34` is a numeric key matching the Akashi/tsuserver convention. The `noencryption` feature in the FL packet tells clients not to encrypt. Sent immediately when a client connects.
+A legacy artifact from when the protocol supported FantaCrypt encryption. The value is a numeric FantaCrypt key. Whisker sends `0` because the AO2 client encrypts outgoing packets (HI, ID) with this key **before** receiving the FL `noencryption` flag. Key `0` makes the XOR encryption a no-op (`byte ^ 0 = byte`), so packets arrive as plain text without needing server-side decryption. Sent immediately when a client connects.
 
 ### HI (Client -> Server)
 

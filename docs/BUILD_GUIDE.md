@@ -407,7 +407,7 @@ nc -zv localhost 27016
 
 # Connect to TCP and see the handshake
 nc localhost 27016
-# Expected output: decryptor#34#%
+# Expected output: decryptor#0#%
 # Press Ctrl+C to disconnect
 
 # Test if the WebSocket port is open
@@ -423,7 +423,7 @@ npm install -g wscat
 
 # Connect to the WebSocket
 wscat --connect ws://localhost:27017
-# Expected output: decryptor#34#%
+# Expected output: decryptor#0#%
 # Press Ctrl+C to disconnect
 ```
 

@@ -94,10 +94,13 @@ const int     MAX_BAN_REASON_LEN            = 255;
 const String  SERVER_SOFTWARE               = "Whisker";
 const String  SERVER_VERSION                = "0.1.0";
 
-// -- Decryptor (legacy FantaCrypt — key 34 = no encryption) --
-// Must be numeric to match Akashi/tsuserver format. The FL packet's
-// "noencryption" feature flag tells clients not to encrypt regardless.
-const String  DECRYPTOR_PACKET              = "decryptor#34#%";
+// -- Decryptor (legacy FantaCrypt — key 0 = no-op encryption) --
+// The AO2 client encrypts outgoing packets using FantaCrypt with
+// this key BEFORE it receives FL#noencryption. With key=0, the
+// XOR is a no-op (byte ^ 0 = byte), so "encrypted" packets arrive
+// as plain text. Key=34 would garble the HI/ID packets and break
+// the handshake. Must be numeric for the client to parse.
+const String  DECRYPTOR_PACKET              = "decryptor#0#%";
 
 // -- Packet terminators --
 const char    FIELD_SEPARATOR               = '#';
