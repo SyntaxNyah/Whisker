@@ -113,12 +113,12 @@ fn bool whisker_plugin_init(PluginAPI* api) @export("whisker_plugin_init") {
     // The AO master server expects a JSON POST body.
     String ws_part = "";
     if (state.ws_enabled) {
-        ws_part = string::tformat(`,\"ws_port\":%d`, state.ws_port);
+        ws_part = string::tformat(`,"ws_port":%d`, state.ws_port);
     }
 
     ZString cmd = string::tformat_zstr(
-        `curl -sf --max-time 10 -X POST -H "Content-Type: application/json" -d '{"port":%d,"name":"%s","description":"%s","players":0,"max_players":%d%s}' "%s"`,
-        state.server_port, state.server_name, state.server_description, state.max_players, ws_part, state.masterserver_url
+        `curl -sf --max-time 10 -X POST -H "Content-Type: application/json" -d '{"port":%d,"name":"%s","description":"%s","players":0%s}' "%s"`,
+        state.server_port, state.server_name, state.server_description, ws_part, state.masterserver_url
     );
 
     // Copy into static buffer so it survives past this function
