@@ -758,4 +758,4 @@ Full protocol docs: [github.com/AttorneyOnline/docs](https://github.com/Attorney
 - [Mod Guide](MOD_GUIDE.md) — Server administration and moderation
 - [Cloudflare Tunneling for AO](https://github.com/AttorneyOnline/docs/blob/master/docs/Server%20Hosting/cloudflare-tunneling.md)
 - [Secure WebSockets Setup](https://github.com/AttorneyOnline/docs/blob/master/docs/Server%20Hosting/secure-websockets.md)
-- [webao.miku.pizza](https://webao.miku.pizza) — LemmyAO's webAO fork (solves HTTPS mixed-content issue)
+- [webao.miku.pizza](https://webao.miku.pizza) — Lemmy AO. SyntaxNyah's webAO fork (solves HTTPS mixed-content issue)
