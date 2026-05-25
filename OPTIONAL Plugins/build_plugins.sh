@@ -36,7 +36,7 @@ build_linux() {
     for plugin in "${PLUGINS[@]}"; do
         echo "Building $plugin..."
         cd "$SCRIPT_DIR/$plugin"
-        c3c build --target linux-x64 --link-libc=no
+        c3c build --target linux-x64
         cp "out/$plugin.so" "$SCRIPT_DIR/Linux/$plugin.so"
         echo "  -> Linux/$plugin.so"
         rm -rf out build

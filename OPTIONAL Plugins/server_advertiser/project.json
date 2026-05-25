@@ -6,7 +6,8 @@
     "targets": {
         "server_advertiser": {
             "type": "dynamic-lib",
-            "sources-override": ["../server_advertiser.c3"]
+            "sources-override": ["../server_advertiser.c3"],
+            "linked-libraries": ["c"]
         }
     }
 }

@@ -6,7 +6,8 @@
     "targets": {
         "case_manager": {
             "type": "dynamic-lib",
-            "sources-override": ["../case_manager.c3"]
+            "sources-override": ["../case_manager.c3"],
+            "linked-libraries": ["c"]
         }
     }
 }
