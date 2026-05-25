@@ -26,7 +26,6 @@
 module server_advertiser;
 
 import std::io;
-import std::thread;
 
 // ============================================================
 // Whisker plugin interface (standalone definitions)
@@ -83,6 +82,15 @@ extern fn CInt system(ZString cmd);
 // Platform-specific sleep
 extern fn uint posix_sleep(uint seconds) @cname("sleep") @if(!env::WIN32);
 extern fn void win_sleep(uint milliseconds) @cname("Sleep") @if(env::WIN32);
+
+// Raw thread creation — bypasses C3's std::thread to avoid null callback
+// issues when the plugin's C3 runtime conflicts with the server's.
+alias RawThreadFn = fn void*(void*);
+extern fn CInt pthread_create(ulong* thread, void* attr, RawThreadFn start, void* arg) @if(!env::WIN32);
+extern fn CInt pthread_detach(ulong thread) @if(!env::WIN32);
+
+extern fn void* create_thread_win(void* attr, usz stack, RawThreadFn start, void* arg, uint flags, void* id) @cname("CreateThread") @if(env::WIN32);
+extern fn CInt close_handle_win(void* handle) @cname("CloseHandle") @if(env::WIN32);
 
 macro void sleep_sec(uint seconds) {
     $if env::WIN32:
@@ -154,12 +162,21 @@ fn bool whisker_plugin_init(PluginAPI* api) @export("whisker_plugin_init") {
     }
     curl_cmd_buf[i] = 0;
 
-    static Thread heartbeat;
-    if (catch heartbeat.create(&heartbeat_loop, null)) {
-        io::printn("[advertiser] WARNING: Failed to start heartbeat thread.");
-        return false;
-    }
-    heartbeat.detach();
+    $if env::WIN32:
+        void* handle = create_thread_win(null, 0, &heartbeat_loop, null, 0, null);
+        if (handle == null) {
+            io::printn("[advertiser] WARNING: Failed to start heartbeat thread.");
+            return false;
+        }
+        close_handle_win(handle);
+    $else
+        ulong tid;
+        if (pthread_create(&tid, null, &heartbeat_loop, null) != 0) {
+            io::printn("[advertiser] WARNING: Failed to start heartbeat thread.");
+            return false;
+        }
+        pthread_detach(tid);
+    $endif
     io::printn("[advertiser] Heartbeat thread started (interval: 60s).");
 
     return true;
@@ -174,7 +191,7 @@ fn void whisker_plugin_shutdown() @export("whisker_plugin_shutdown") {
 // Heartbeat loop (C functions only — no C3 temp allocator)
 // ============================================================
 
-fn int heartbeat_loop(void* arg) {
+fn void* heartbeat_loop(void* arg) {
     sleep_sec(5);
 
     while (state.running) {
@@ -186,7 +203,7 @@ fn int heartbeat_loop(void* arg) {
         }
         sleep_sec(HEARTBEAT_INTERVAL);
     }
-    return 0;
+    return null;
 }
 
 // ============================================================
