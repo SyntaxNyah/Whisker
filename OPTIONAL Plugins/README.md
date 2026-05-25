@@ -61,7 +61,7 @@ The `Linux/` folder contains pre-built `.so` files. Copy them into your server's
 cp "OPTIONAL Plugins/Linux/"*.so plugins/
 ```
 
-Then start the server — **you MUST run from the Whisker root directory**:
+Then start the server:
 
 ```bash
 cd ~/Whisker && ./out/whisker
@@ -86,21 +86,10 @@ The `Windows/` folder contains pre-built `.dll` files. Copy them into your serve
 .\out\whisker.exe
 ```
 
-### **IMPORTANT: Do NOT run the server from inside `out/`!**
-
-The `plugins/` folder is relative to the directory you run the server from (your **working directory**), NOT relative to the binary. If you `cd` into `out/` first, the server looks for `out/plugins/` which doesn't exist and **no plugins will load**.
-
-**Correct:**
-```bash
-cd ~/Whisker && ./out/whisker
-```
-
-**Wrong:**
-```bash
-cd ~/Whisker/out && ./whisker    # plugins/ won't be found!
-```
-
-You can change this path in `config.toml` under `[plugins] directory = "plugins"`.
+> **Note:** The server automatically resolves the `plugins/` path relative to the
+> project root (same as `config/`), so it works whether you run from the project
+> root or from `out/`. You can customize the path in `config.toml` under
+> `[plugins] directory = "plugins"`.
 
 ### Removing a plugin
 

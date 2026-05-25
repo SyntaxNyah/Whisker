@@ -148,8 +148,12 @@ fn Server*? init(String config_dir) {
     // Build the plugin API with all server helpers
     srv.plugin_api = build_plugin_api(srv);
 
-    // Load plugins from the plugins directory
-    plugin::load_all(&srv.plugins, &srv.plugin_api, cfg.plugin_directory);
+    // Resolve plugin directory relative to project root (same as config).
+    // config_dir is already resolved relative to the binary (e.g. "./out/../config"),
+    // so going up one level from config gives us the project root. This way
+    // plugins/ is found whether you run from the project root or from out/.
+    srv.cfg.plugin_directory = string::tformat("%s/../%s", config_dir, cfg.plugin_directory);
+    plugin::load_all(&srv.plugins, &srv.plugin_api, srv.cfg.plugin_directory);
 
     return srv;
 }
