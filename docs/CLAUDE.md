@@ -29,7 +29,7 @@ Whisker is an Attorney Online 2 (AO2) server written in C3. It implements the fu
 | `whisker` | `main.c3` | Entry point, CLI parsing |
 | `whisker::config` | `config.c3` | Config loading + ALL named constants |
 | `whisker::server` | `server.c3` | Core server: listeners, client lifecycle, broadcasting |
-| `whisker::client` | `client.c3` | Client struct, send helpers, display name |
+| `whisker::client` | `client.c3` | Client struct, atomic send (c_send + MSG_NOSIGNAL), display name |
 | `whisker::protocol` | `protocol.c3` | FantaCode encode/decode, packet buffer |
 | `whisker::area` | `area.c3` | Area state, evidence, CMs, lock |
 | `whisker::packets` | `packets.c3` | All AO2 packet handlers |
@@ -44,11 +44,13 @@ Whisker is an Attorney Online 2 (AO2) server written in C3. It implements the fu
 ### Key Design Decisions
 
 1. **No magic numbers.** Every constant is named in `config.c3`. Grep for `const` to find them all.
-2. **Thread-per-client.** Simple model like Athena. Each connection gets its own handler.
+2. **Thread-per-client.** Simple model like Athena. Each connection gets its own handler thread with its own `@pool_init` memory pool. Client structs are created inside the handler's pool to prevent cross-pool memory corruption.
 3. **Plugins over forks.** The plugin system lets you add commands and packet hooks without modifying core code.
 4. **UID-based pairing.** Pairs survive character changes and area moves (inspired by Nyathena).
 5. **Multi-layer rate limiting.** Separate limits for IC messages, OOC, raw packets, and connections per IP.
 6. **Reverse proxy aware.** Extracts real IPs from X-Forwarded-For, X-Real-IP, CF-Connecting-IP headers.
+7. **SIGPIPE-safe.** Global `signal(SIGPIPE, SIG_IGN)` plus per-send `MSG_NOSIGNAL` flag. Writing to a broken socket marks the client disconnected instead of killing the server.
+8. **Atomic WebSocket frames.** `send_raw` builds the complete WS frame (header + payload) in a single buffer and sends with one syscall to prevent frame interleaving during concurrent broadcasts.
 
 ### Protocol Flow
 

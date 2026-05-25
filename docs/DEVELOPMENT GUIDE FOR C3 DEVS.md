@@ -209,9 +209,14 @@ mem::free(p);
 ```
 
 For server code, we mostly use:
-- `mem::heap()` for long-lived data (clients, areas)
-- `mem::temp()` / `@pool()` for per-request processing
+- `mem::new()` for long-lived data (server struct, areas)
+- `@pool_init(mem, size)` for per-thread memory pools (each client handler thread gets its own)
 - `dstring::temp()` for building strings within a request
+- `string::tformat()` for temporary formatted strings
+
+> **Important:** All allocations for a Client (struct, DString, temps)
+> must happen inside the same `@pool_init` scope. Never allocate in one
+> pool and free in another — this corrupts the allocator silently.
 
 ---
 
@@ -287,13 +292,18 @@ main() in main.c3
 
 ```
 handle_new_connection()
-  ├─ Extract IP (or real IP from proxy header)
   ├─ Connection rate limit check → reject if flooding
   ├─ Multiclient limit check → reject if too many from same IP
-  ├─ Create Client struct
+  └─ Spawn client_handler_thread (detached)
+
+client_handler_thread()
+  ├─ @pool_init — each thread gets its own memory pool
+  ├─ Create Client struct inside the thread's pool
+  ├─ Configure rate limiters from server config
+  ├─ Register client in the server's client list
   ├─ Send decryptor packet (tells client: no encryption)
   └─ client_handler() — main packet loop
-       ├─ Read bytes from socket
+       ├─ Read bytes from socket (TCP) or WebSocket frames
        ├─ Feed to PacketBuffer
        ├─ Extract complete packets (delimited by %)
        ├─ Raw packet rate limit check
@@ -301,6 +311,28 @@ handle_new_connection()
        ├─ Plugin hook check (plugins get first look)
        └─ Dispatch to handler in packets.c3
 ```
+
+> **Why Client is created in the handler thread:** The Client struct and
+> its DString buffers must live in the same `@pool_init` as the code that
+> grows them. Creating Client in the accept loop and passing it to a
+> handler thread causes cross-pool memory corruption — the DString grows
+> in the handler's pool but was allocated in the listener's pool, and
+> freeing across pools corrupts the listener's allocator.
+
+### Sending Data & SIGPIPE
+
+All outbound data goes through `Client.send_raw()` in `client.c3`, which
+uses the C `send()` syscall directly with `MSG_NOSIGNAL` (Linux) to
+prevent SIGPIPE from killing the process when writing to a broken socket.
+Additionally, `main.c3` installs a global `signal(SIGPIPE, SIG_IGN)`
+handler as a safety net.
+
+For WebSocket clients, `send_raw` builds the complete WebSocket frame
+(header + payload) in a single stack buffer and sends it atomically in
+one `send()` call. This prevents frame interleaving when multiple threads
+broadcast to the same client concurrently. Packets larger than 16 KB
+(e.g., character/music lists) use two sends, which is safe because they
+only occur during the single-threaded handshake phase.
 
 ### The Join Handshake
 

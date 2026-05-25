@@ -23,7 +23,16 @@ import whisker::config;
 import whisker::server;
 import std::io;
 
+// Ignore SIGPIPE so writing to a broken socket doesn't kill the server.
+// Without this, if any client disconnects mid-broadcast, the entire
+// server process terminates. Every network server on Linux needs this.
+extern fn void* signal(int sig, void* handler) @if(!env::WIN32);
+const int SIGPIPE = 13;
+
 fn void main(String[] args) {
+    $if !env::WIN32:
+        signal(SIGPIPE, (void*)1); // SIG_IGN = 1
+    $endif
     io::printn("");
     io::printn("  ╦ ╦┬ ┬┬┌─┐┬┌─┌─┐┬─┐");
     io::printn("  ║║║├─┤│└─┐├┴┐├┤ ├┬┘");

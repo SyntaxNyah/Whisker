@@ -14,6 +14,9 @@ import std::io;
 import std::net::tcp;
 import std::time;
 
+extern fn long c_send(int sock, char* buf, usz len, int flags) @cname("send");
+const int MSG_NOSIGNAL = 0x4000; // Prevent SIGPIPE on broken sockets
+
 // ============================================================
 // Client struct
 // ============================================================
@@ -134,15 +137,66 @@ fn void Client.disconnect(&self) {
 // ============================================================
 
 // Send a pre-built wire-format packet string to this client.
+// Uses c_send() with MSG_NOSIGNAL to prevent SIGPIPE on broken sockets.
+// WebSocket frames are built in a single buffer to prevent frame
+// interleaving when multiple threads broadcast concurrently.
 fn void Client.send_raw(&self, String data) {
     if (!self.connected) return;
 
+    int fd = *(int*)&self.socket;
+    $if env::WIN32:
+        int flags = 0;
+    $else
+        int flags = MSG_NOSIGNAL;
+    $endif
+
     if (self.is_websocket) {
-        // WebSocket: wrap in a text frame
-        websocket_send_text(&self.socket, data);
+        // Build WebSocket text frame header
+        char[10] ws_hdr;
+        usz hdr_len;
+        ws_hdr[0] = 0x81; // FIN + text opcode
+
+        if (data.len < 126) {
+            ws_hdr[1] = (char)data.len;
+            hdr_len = 2;
+        } else if (data.len < 65536) {
+            ws_hdr[1] = 126;
+            ws_hdr[2] = (char)(data.len >> 8);
+            ws_hdr[3] = (char)(data.len & 0xFF);
+            hdr_len = 4;
+        } else {
+            ws_hdr[1] = 127;
+            for (int i = 0; i < 8; i++) {
+                ws_hdr[2 + i] = (char)((data.len >> ((7 - i) * 8)) & 0xFF);
+            }
+            hdr_len = 10;
+        }
+
+        // Send header + payload as a single atomic write to prevent
+        // frame interleaving when multiple threads broadcast.
+        usz total = hdr_len + data.len;
+        if (total <= 16384) {
+            // Typical AO2 packet: single send from stack buffer
+            char[16384] buf;
+            for (usz i = 0; i < hdr_len; i++) buf[i] = ws_hdr[i];
+            for (usz i = 0; i < data.len; i++) buf[hdr_len + i] = data[i];
+            if (c_send(fd, &buf[0], total, flags) < 0) {
+                self.connected = false;
+            }
+        } else {
+            // Large frame (char/music lists during handshake): two sends
+            // are safe here since no concurrent broadcasts happen yet
+            if (c_send(fd, &ws_hdr[0], hdr_len, flags) < 0) {
+                self.connected = false;
+                return;
+            }
+            if (c_send(fd, data.ptr, data.len, flags) < 0) {
+                self.connected = false;
+            }
+        }
     } else {
-        // TCP: send raw bytes
-        if (catch self.socket.write(data)) {
+        // TCP: send with MSG_NOSIGNAL to prevent SIGPIPE
+        if (c_send(fd, data.ptr, data.len, flags) < 0) {
             self.connected = false;
         }
     }
@@ -194,37 +248,3 @@ fn bool Client.is_moderator(&self) {
     return self.is_authenticated && self.permissions > 0;
 }
 
-// ============================================================
-// WebSocket text frame sender (minimal implementation)
-// Full WebSocket handling is in websocket.c3
-// ============================================================
-
-fn void websocket_send_text(tcp::TcpSocket* socket, String data) {
-    // WebSocket text frame: opcode 0x81, then length, then payload
-    // Server-to-client frames are NOT masked (per RFC 6455)
-
-    char[10] header_buf;
-    usz header_len;
-
-    header_buf[0] = 0x81; // FIN + text opcode
-
-    if (data.len < 126) {
-        header_buf[1] = (char)data.len;
-        header_len = 2;
-    } else if (data.len < 65536) {
-        header_buf[1] = 126;
-        header_buf[2] = (char)(data.len >> 8);
-        header_buf[3] = (char)(data.len & 0xFF);
-        header_len = 4;
-    } else {
-        header_buf[1] = 127;
-        // 8-byte length (big-endian)
-        for (int i = 0; i < 8; i++) {
-            header_buf[2 + i] = (char)((data.len >> ((7 - i) * 8)) & 0xFF);
-        }
-        header_len = 10;
-    }
-
-    if (catch socket.write(header_buf[0..header_len - 1])) return;
-    if (catch socket.write(data)) return;
-}
