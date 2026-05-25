@@ -26,7 +26,6 @@ module server_advertiser;
 
 import std::io;
 import std::thread;
-import std::time;
 
 // ============================================================
 // Whisker plugin interface (standalone definitions)
@@ -55,7 +54,7 @@ const String SERVER_NAME       = "Whisker";
 const ushort DEFAULT_TCP_PORT  = 27016;
 const ushort DEFAULT_WS_PORT   = 27017;
 const int    DEFAULT_MAX_PLAYERS = 100;
-const long   HEARTBEAT_INTERVAL_SEC = 60;
+const uint   HEARTBEAT_INTERVAL_SEC = 60;
 
 // ============================================================
 // Plugin state
@@ -73,6 +72,14 @@ struct AdvertiserState {
 }
 
 AdvertiserState state;
+
+// Pre-built curl command — assembled on the main thread during init
+// so the heartbeat thread never needs C3's temp allocator.
+char[4096] curl_cmd_buf;
+
+// C functions used in the heartbeat thread to avoid C3 runtime TLS issues
+extern fn CInt puts(ZString s);
+extern fn uint sleep_c(uint seconds) @cname("sleep");
 
 // ============================================================
 // Plugin interface (exported)
@@ -100,6 +107,30 @@ fn bool whisker_plugin_init(PluginAPI* api) @export("whisker_plugin_init") {
     io::printfn("[advertiser] Advertising to: %s", state.masterserver_url);
     io::printfn("[advertiser] Server: %s (port %d)", state.server_name, state.server_port);
 
+    // Pre-build the curl command on the main thread (where C3's temp
+    // allocator works). The heartbeat thread will just call system()
+    // with this pre-built string — no C3 runtime needed in the thread.
+    String name_enc = url_encode(state.server_name);
+    String desc_enc = url_encode(state.server_description);
+
+    String ws_part = "";
+    if (state.ws_enabled) {
+        ws_part = string::tformat("&ws_port=%d", state.ws_port);
+    }
+
+    ZString cmd = string::tformat_zstr(
+        `curl -sf --max-time 10 -X POST -H "Content-Type: application/x-www-form-urlencoded" -d "port=%d&name=%s&description=%s&players=0&max_players=%d%s" "%s"`,
+        state.server_port, name_enc, desc_enc, state.max_players, ws_part, state.masterserver_url
+    );
+
+    // Copy into static buffer so it survives past this function
+    usz i = 0;
+    while (i < 4095 && cmd[i] != 0) {
+        curl_cmd_buf[i] = cmd[i];
+        i++;
+    }
+    curl_cmd_buf[i] = 0;
+
     Thread heartbeat;
     if (catch heartbeat.create(&heartbeat_loop, null)) {
         io::printn("[advertiser] WARNING: Failed to start heartbeat thread.");
@@ -119,66 +150,26 @@ fn void whisker_plugin_shutdown() @export("whisker_plugin_shutdown") {
 // ============================================================
 // Heartbeat loop
 // ============================================================
+//
+// This thread uses ONLY C functions (system, sleep, puts) to avoid
+// C3 temp allocator TLS issues in dynamically loaded plugins.
+// The curl command is pre-built during init on the main thread.
 
-fn int heartbeat_loop(void* arg) {
-    @pool_init(mem, 1024 * 64) {
-        thread::sleep(time::sec(5));
-
-        while (state.running) {
-            send_heartbeat();
-            thread::sleep(time::sec(HEARTBEAT_INTERVAL_SEC));
-        }
-    };
-    return 0;
-}
-
-// ============================================================
-// HTTP POST to master server
-// ============================================================
-
-fn void send_heartbeat() {
-    // The AO2 master server expects a POST with server information.
-    // Standard fields: port, ws_port, players, name, description.
-    // The master server uses the source IP as the server's IP.
-
-    DString body = dstring::temp();
-    body.append_string("port=");
-    body.append_string(string::tformat("%d", state.server_port));
-    body.append_string("&name=");
-    body.append_string(url_encode(state.server_name));
-    body.append_string("&description=");
-    body.append_string(url_encode(state.server_description));
-    body.append_string("&players=0");
-    body.append_string("&max_players=");
-    body.append_string(string::tformat("%d", state.max_players));
-
-    if (state.ws_enabled) {
-        body.append_string("&ws_port=");
-        body.append_string(string::tformat("%d", state.ws_port));
-    }
-
-    if (post_to_url(state.masterserver_url, body.str_view())) {
-        io::printn("[advertiser] Heartbeat sent successfully.");
-    } else {
-        io::printn("[advertiser] WARNING: Failed to send heartbeat.");
-    }
-}
-
-// ============================================================
-// HTTP POST via curl
-// ============================================================
-
-// C's system() — lets us shell out to curl for HTTPS support.
-// curl ships with Windows 10+, Linux, and macOS.
 extern fn CInt system(ZString cmd);
 
-fn bool post_to_url(String url, String body) {
-    // -s: silent, -f: fail on HTTP errors, --max-time: 10s timeout
-    ZString cmd = string::tformat_zstr(
-        `curl -sf --max-time 10 -X POST -H "Content-Type: application/x-www-form-urlencoded" -d "%s" "%s"`,
-        body, url
-    );
-    return system(cmd) == 0;
+fn int heartbeat_loop(void* arg) {
+    sleep_c(5);
+
+    while (state.running) {
+        CInt result = system(&curl_cmd_buf[0]);
+        if (result == 0) {
+            puts("[advertiser] Heartbeat sent successfully.");
+        } else {
+            puts("[advertiser] WARNING: Failed to send heartbeat.");
+        }
+        sleep_c(HEARTBEAT_INTERVAL_SEC);
+    }
+    return 0;
 }
 
 // ============================================================
