@@ -87,14 +87,31 @@ The pre-built binaries in `Windows/` and `Linux/` are ready to use. If you need 
 ./build_plugins.sh native    # Current platform only (default)
 ```
 
-**Manual build (single plugin):**
+**Manual build (single plugin) — Option A: project.json:**
 ```bash
 cd case_manager/             # or server_advertiser/
 c3c build                    # builds for current platform
 # Output: out/case_manager.so (Linux) or out/case_manager.dll (Windows)
 ```
 
-Each plugin has its own `project.json` in a subdirectory (e.g., `case_manager/project.json`). The key setting is `"type": "dynamic-lib"` which tells c3c to produce a `.so` / `.dll` instead of an executable.
+**Manual build — Option B: command-line (no project.json needed):**
+```bash
+# Linux (the -l c flag is required to link against libc)
+c3c dynamic-lib case_manager.c3 -l c -o case_manager
+cp case_manager.so /path/to/whisker/plugins/
+
+# Windows
+c3c dynamic-lib case_manager.c3 -o case_manager
+cp case_manager.dll /path/to/whisker/plugins/
+```
+
+Each plugin has its own `project.json` in a subdirectory (e.g., `case_manager/project.json`). Key settings:
+- `"type": "dynamic-lib"` — produces a `.so` / `.dll` instead of an executable
+- `"linked-libraries": ["c"]` — links against libc (**required on Linux** to avoid `undefined symbol: atexit`)
+
+> **Note:** Cross-compiling Linux `.so` files from Windows does **not** produce working
+> binaries. Always build `.so` files natively on your Linux server. Windows `.dll` files
+> can be cross-compiled from Linux without issues.
 
 ---
 

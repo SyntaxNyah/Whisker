@@ -120,7 +120,7 @@ fn void whisker_plugin_shutdown() @export("whisker_plugin_shutdown") {
 // Heartbeat loop
 // ============================================================
 
-fn int heartbeat_loop(void* arg) {
+fn int heartbeat_loop(void* arg) @pool() {
     thread::sleep(time::sec(5));
 
     while (state.running) {

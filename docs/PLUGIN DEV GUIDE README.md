@@ -105,7 +105,8 @@ Create a `project.json` in your plugin's directory:
     "targets": {
         "my_plugin": {
             "type": "dynamic-lib",
-            "sources-override": ["../my_plugin.c3"]
+            "sources-override": ["../my_plugin.c3"],
+            "linked-libraries": ["c"]
         }
     }
 }
@@ -114,9 +115,11 @@ Create a `project.json` in your plugin's directory:
 Key settings:
 - **`type: "dynamic-lib"`** — builds a `.so` (Linux) or `.dll` (Windows) instead of an executable
 - **`sources-override`** — points to your `.c3` source file(s). Use this to control exactly which files are compiled
+- **`linked-libraries: ["c"]`** — explicitly links against libc. **Required on Linux** to avoid `undefined symbol: atexit` errors when the server loads the plugin
 
 ### 4. Build
 
+**Option A: Using `project.json`** (recommended for repeatable builds):
 ```bash
 cd my_plugin/          # directory containing project.json
 c3c build              # builds for current platform
@@ -124,17 +127,30 @@ c3c build              # builds for current platform
 
 This produces `out/my_plugin.so` (Linux) or `out/my_plugin.dll` (Windows).
 
-**Cross-compilation** (build Linux .so from Windows or vice versa):
+**Option B: Command-line** (no project.json needed):
 ```bash
-c3c build --target linux-x64 --link-libc=no     # Linux .so from any OS
-c3c build --target windows-x64                    # Windows .dll from any OS
+# Linux — the -l c flag links against libc (required)
+c3c dynamic-lib my_plugin.c3 -l c -o my_plugin
+
+# Windows
+c3c dynamic-lib my_plugin.c3 -o my_plugin
 ```
 
-> **Note:** `--link-libc=no` is needed for Linux cross-compilation from Windows
-> because the Linux C runtime isn't available locally. The symbols resolve at
-> runtime when the server loads the plugin. If your plugin uses `std::thread`
-> or other heavy stdlib features, you may need to provide stub libraries
-> (see the `build_plugins.sh` script in `OPTIONAL Plugins/` for an example).
+This produces `my_plugin.so` or `my_plugin.dll` in the current directory.
+
+> **Important:** On Linux, you **must** either use `"linked-libraries": ["c"]` in
+> your `project.json` or pass `-l c` on the command line. Without this, the plugin
+> will fail to load with `undefined symbol: atexit`.
+
+**Cross-compilation:**
+```bash
+c3c build --target windows-x64                    # Windows .dll from Linux
+```
+
+> **Note:** Cross-compiling Linux `.so` files from Windows is **not recommended**.
+> The resulting binaries will have unresolved libc symbols (`atexit`, etc.) that
+> cause them to fail at load time. Build `.so` files natively on your Linux server
+> instead. Windows `.dll` files can be cross-compiled from Linux without issues.
 
 ### 5. Deploy
 
@@ -312,7 +328,7 @@ fn void cmd_rules(void* c, String args) {
 }
 ```
 
-**project.json** (create a `rules/` subdirectory for it):
+**Option A: project.json** (create a `rules/` subdirectory for it):
 ```json
 {
     "version": "1.0.0",
@@ -320,18 +336,26 @@ fn void cmd_rules(void* c, String args) {
     "targets": {
         "rules": {
             "type": "dynamic-lib",
-            "sources-override": ["../rules.c3"]
+            "sources-override": ["../rules.c3"],
+            "linked-libraries": ["c"]
         }
     }
 }
 ```
 
-**Build and deploy:**
 ```bash
 cd rules/
 c3c build
 cp out/rules.so /path/to/whisker/plugins/   # Linux
 cp out/rules.dll /path/to/whisker/plugins/   # Windows
+```
+
+**Option B: Command-line** (no project.json needed):
+```bash
+c3c dynamic-lib rules.c3 -l c -o rules      # Linux
+c3c dynamic-lib rules.c3 -o rules            # Windows
+cp rules.so /path/to/whisker/plugins/        # Linux
+cp rules.dll /path/to/whisker/plugins/       # Windows
 ```
 
 ---
@@ -547,7 +571,7 @@ fn bool on_music_change(void* c, void* pkt) {
 # Common issues:
 # - "missing required exports" → your @export names don't match exactly
 # - "Failed to load" → wrong architecture, missing libc linkage, or bad file path
-# - "undefined symbol: atexit" → rebuild with "type": "dynamic-lib" in project.json
+# - "undefined symbol: atexit" → add "linked-libraries": ["c"] to project.json, or pass -l c on the command line
 # - Plugin silently not loading → check file extension (.so on Linux, .dll on Windows)
 
 # List what's in the plugins directory
@@ -573,15 +597,18 @@ cat > ~/my-plugins/my_cool_plugin/project.json << 'EOF'
     "targets": {
         "my_cool_plugin": {
             "type": "dynamic-lib",
-            "sources-override": ["../my_cool_plugin.c3"]
+            "sources-override": ["../my_cool_plugin.c3"],
+            "linked-libraries": ["c"]
         }
     }
 }
 EOF
 
-# 3. Build it
+# 3. Build it (Option A: project.json)
 cd ~/my-plugins/my_cool_plugin
 c3c build
+# Or without project.json (Option B: command-line):
+# c3c dynamic-lib ../my_cool_plugin.c3 -l c -o my_cool_plugin
 
 # 4. Deploy to Whisker
 cp out/my_cool_plugin.so /path/to/whisker/plugins/   # Linux
@@ -601,8 +628,11 @@ cd /path/to/whisker
 
 One-liner for the build-deploy-restart cycle:
 ```bash
-# From your plugin's build directory (containing project.json)
+# Using project.json:
 c3c build && cp out/my_cool_plugin.so /path/to/whisker/plugins/ && echo "Deployed! Restart Whisker."
+
+# Using command-line (no project.json):
+c3c dynamic-lib my_cool_plugin.c3 -l c -o my_cool_plugin && cp my_cool_plugin.so /path/to/whisker/plugins/ && echo "Deployed!"
 ```
 
 ## Standalone vs. In-Tree Plugins
