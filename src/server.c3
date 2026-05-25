@@ -243,44 +243,21 @@ fn void Server.handle_new_connection(&self, tcp::TcpSocket socket, bool is_webso
         return;
     }
 
-    // Create client
-    client::Client* c = mem::new(client::Client);
-    *c = client::new_client(socket, ip, is_websocket);
-    c.ipid = ipid;
-
-    // Configure rate limiters from server config
-    c.msg_limiter.configure(self.cfg.msg_rate_limit, self.cfg.msg_rate_window_sec);
-    c.ooc_limiter.configure(self.cfg.ooc_rate_limit, self.cfg.ooc_rate_window_sec);
-    c.raw_pkt_limiter.configure(self.cfg.raw_pkt_rate_limit, self.cfg.raw_pkt_rate_window_sec);
-
-    // Register client
-    int slot = self.add_client(c);
-    if (slot < 0) {
-        io::printn("[server] Server full, rejecting connection.");
-        (void)socket.close();
-        mem::free(c);
-        return;
-    }
-
-    io::printfn("[server] New %s connection from %s (slot %d)",
-        is_websocket ? "WebSocket" : "TCP", ipid, slot);
-
-    // Send the decryptor. send_raw handles both TCP (direct C send) and
-    // WebSocket (proper text frame) — must go through send_raw so WS
-    // clients receive a valid frame, not raw bytes.
-    c.send_raw(config::DECRYPTOR_PACKET);
-
-    // Spawn a thread to handle this client
+    // Spawn handler thread — Client is created inside the handler's own
+    // memory pool so all allocations (struct, DString, temps) live in one
+    // allocator context. This prevents cross-pool corruption when the
+    // DString grows during packet processing.
     ClientThreadArgs* args = mem::new(ClientThreadArgs);
     args.server = self;
-    args.client = c;
+    args.socket = socket;
+    args.ip = ip;
+    args.ipid = ipid;
+    args.is_websocket = is_websocket;
+
     Thread t;
     if (catch t.create(&client_handler_thread, args)) {
         io::printn("[server] Failed to create handler thread");
-        self.remove_client(c);
-        c.disconnect();
-        mem::free(c);
-        mem::free(args);
+        (void)socket.close();
         return;
     }
     (void)t.detach();
@@ -292,14 +269,47 @@ fn void Server.handle_new_connection(&self, tcp::TcpSocket socket, bool is_webso
 
 struct ClientThreadArgs {
     Server* server;
-    client::Client* client;
+    tcp::TcpSocket socket;
+    String ip;
+    String ipid;
+    bool is_websocket;
 }
 
 fn int client_handler_thread(void* arg) {
     @pool_init(mem, 1024 * 256) {
         ClientThreadArgs* args = (ClientThreadArgs*)arg;
-        client_handler(args.server, args.client);
-        mem::free(args);
+        Server* srv = args.server;
+
+        // Create Client inside this thread's pool so the DString and
+        // all temporary memory share the same allocator. Prevents the
+        // cross-pool free that was corrupting the WS listener thread.
+        client::Client* c = mem::new(client::Client);
+        *c = client::new_client(args.socket, args.ip, args.is_websocket);
+        c.ipid = args.ipid;
+
+        // Configure rate limiters from server config
+        c.msg_limiter.configure(srv.cfg.msg_rate_limit, srv.cfg.msg_rate_window_sec);
+        c.ooc_limiter.configure(srv.cfg.ooc_rate_limit, srv.cfg.ooc_rate_window_sec);
+        c.raw_pkt_limiter.configure(srv.cfg.raw_pkt_rate_limit, srv.cfg.raw_pkt_rate_window_sec);
+
+        // Register client
+        int slot = srv.add_client(c);
+        if (slot < 0) {
+            io::printn("[server] Server full, rejecting connection.");
+            c.disconnect();
+            return 0;
+        }
+
+        io::printfn("[server] New %s connection from %s (slot %d)",
+            args.is_websocket ? "WebSocket" : "TCP", c.ipid, slot);
+
+        // Send the decryptor — send_raw handles both TCP and WebSocket framing
+        c.send_raw(config::DECRYPTOR_PACKET);
+
+        // Process client packets until disconnect
+        client_handler(srv, c);
+
+        // Pool cleanup frees Client, DString, and all temp memory at once
     };
     return 0;
 }
