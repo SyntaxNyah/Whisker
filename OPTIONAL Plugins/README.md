@@ -51,37 +51,62 @@ OPTIONAL Plugins/
 
 ## How to Use
 
-**To install a plugin:**
+**All plugins are already compiled and ready to go.** You don't need a compiler, you don't need to build anything. Just drag and drop.
 
-1. Open the `Windows/` or `Linux/` folder (whichever matches your server)
-2. Copy the plugin file into your server's `plugins/` directory
-3. Edit `config/config.toml` if the plugin requires configuration (check the plugin's section below)
-4. Restart your server
+### Linux
 
-> ### **IMPORTANT: Run the server from the Whisker root directory, NOT from `out/`!**
->
-> The `plugins/` folder is relative to the directory you run the server from
-> (your **working directory**), NOT relative to the binary location. If you
-> `cd out && ./whisker`, the server looks for `out/plugins/` which doesn't exist
-> and **no plugins will load**.
->
-> **Correct:**
-> ```bash
-> cd ~/Whisker && ./out/whisker
-> ```
->
-> **Wrong:**
-> ```bash
-> cd ~/Whisker/out && ./whisker    # plugins/ won't be found!
-> ```
->
-> You can change this path in `config.toml` under `[plugins] directory = "plugins"`.
+The `Linux/` folder contains pre-built `.so` files. Copy them into your server's `plugins/` directory:
 
-**To remove a plugin:**
+```bash
+cp "OPTIONAL Plugins/Linux/"*.so plugins/
+```
 
-Delete the `.so` / `.dll` file from `plugins/` and restart.
+Then start the server — **you MUST run from the Whisker root directory**:
 
-**Don't want any of these?**
+```bash
+cd ~/Whisker && ./out/whisker
+```
+
+That's it. You should see the plugins load in the console output:
+
+```
+[plugins] Scanning 'plugins' for plugins...
+[case_manager] Case Manager plugin loaded (7 commands).
+[plugins] Loaded: Case Manager v1.0.0 by Whisker Community
+[advertiser] Heartbeat thread started (interval: 60s).
+[plugins] Loaded: Server Advertiser v1.0.0 by Whisker Community
+[plugins] 2 plugins loaded, 7 commands registered, 0 hooks registered.
+```
+
+### Windows
+
+The `Windows/` folder contains pre-built `.dll` files. Copy them into your server's `plugins/` folder, then run:
+
+```powershell
+.\out\whisker.exe
+```
+
+### **IMPORTANT: Do NOT run the server from inside `out/`!**
+
+The `plugins/` folder is relative to the directory you run the server from (your **working directory**), NOT relative to the binary. If you `cd` into `out/` first, the server looks for `out/plugins/` which doesn't exist and **no plugins will load**.
+
+**Correct:**
+```bash
+cd ~/Whisker && ./out/whisker
+```
+
+**Wrong:**
+```bash
+cd ~/Whisker/out && ./whisker    # plugins/ won't be found!
+```
+
+You can change this path in `config.toml` under `[plugins] directory = "plugins"`.
+
+### Removing a plugin
+
+Delete the `.so` / `.dll` file from `plugins/` and restart. That's it.
+
+### Don't want any of these?
 
 Delete this entire `OPTIONAL Plugins` folder. It won't affect your server.
 
