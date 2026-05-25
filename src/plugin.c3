@@ -256,10 +256,13 @@ fn void load_all(PluginManager* pm, PluginAPI* api, String directory) {
     if (pipe != null) {
         char[256] name_buf;
         while (fgets(&name_buf[0], 256, pipe) != null) {
-            // Trim trailing newline/whitespace
+            // Trim trailing newline/whitespace and null-terminate.
+            // dlopen/LoadLibrary read C strings (until \0), not C3
+            // slices, so the buffer must be properly terminated.
             usz len = 0;
             while (len < 255 && name_buf[len] != 0 && name_buf[len] != '\n' && name_buf[len] != '\r') len++;
             if (len < 4) continue;
+            name_buf[len] = 0; // Null-terminate for C interop
 
             String name = (String)name_buf[0..len - 1];
 
@@ -306,7 +309,13 @@ fn void load_single(PluginManager* pm, PluginAPI* api, String path) {
         $else
             char* err = dlerror();
             if (err != null) {
-                io::printfn("[plugins] Failed to load: %s (%s)", path, (String)err[0..255]);
+                usz err_len = 0;
+                while (err_len < 512 && err[err_len] != 0) err_len++;
+                if (err_len > 0) {
+                    io::printfn("[plugins] Failed to load: %s (%s)", path, (String)err[0..err_len - 1]);
+                } else {
+                    io::printfn("[plugins] Failed to load: %s", path);
+                }
             } else {
                 io::printfn("[plugins] Failed to load: %s", path);
             }

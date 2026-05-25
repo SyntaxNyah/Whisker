@@ -52,9 +52,14 @@ OPTIONAL Plugins/
 **To install a plugin:**
 
 1. Open the `Windows/` or `Linux/` folder (whichever matches your server)
-2. Drag the plugin file into your server's `plugins/` directory
+2. Copy the plugin file into your server's `plugins/` directory
 3. Edit `config/config.toml` if the plugin requires configuration (check the plugin's section below)
 4. Restart your server
+
+> **Where is `plugins/`?** It's relative to the directory you run the server from
+> (your working directory), NOT relative to the binary or config directory. If you
+> run `./out/whisker` from `~/Whisker/`, then `plugins/` means `~/Whisker/plugins/`.
+> You can change this path in `config.toml` under `[plugins] directory = "plugins"`.
 
 **To remove a plugin:**
 

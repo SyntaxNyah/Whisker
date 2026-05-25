@@ -95,6 +95,10 @@ This produces `my_plugin.so` (Linux) or `my_plugin.dll` (Windows).
 Copy the `.so` or `.dll` file to the server's `plugins/` directory.
 Restart Whisker. Your plugin loads automatically.
 
+> **Note:** `plugins/` is relative to the working directory you run the server
+> from, not the binary location. Configurable via `[plugins] directory` in
+> `config.toml`.
+
 ## Plugin API Reference
 
 ### Registering Commands
