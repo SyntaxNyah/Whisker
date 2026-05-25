@@ -28,16 +28,14 @@ import std::thread;
 
 extern fn int getpeername(int sock, void* addr, int* addrlen);
 extern fn int setsockopt(int sock, int level, int optname, void* optval, int optlen);
-extern fn long c_send(int sock, char* buf, usz len, int flags) @cname("send");
-extern fn long c_recv(int sock, char* buf, usz len, int flags) @cname("recv");
 
 const int SOL_TCP     = 6;
 const int TCP_NODELAY = 1;
 
-// Disable Nagle's algorithm so small packets (like the 21-byte decryptor)
-// are sent immediately instead of being buffered. Go (Athena) does this by
-// default; without it, localhost connections can stall because the client
-// never receives the decryptor and the handshake deadlocks.
+// Disable Nagle's algorithm so small packets (like the decryptor)
+// are sent immediately instead of being buffered. Without this,
+// localhost connections can stall because the client never receives
+// the decryptor and the handshake deadlocks.
 fn void set_tcp_nodelay(int fd) {
     int one = 1;
     setsockopt(fd, SOL_TCP, TCP_NODELAY, &one, 4);
@@ -396,11 +394,10 @@ fn void client_handler(Server* server, client::Client* c) {
             // WebSocket text payload contains AO2 packets (with #% terminators)
             c.packet_buf.feed(frame.payload);
         } else {
-            // TCP: read raw bytes via C recv() directly
-            int rfd = get_raw_fd(&c.socket);
-            long n = c_recv(rfd, &read_buf[0], 4096, 0);
-            if (n <= 0) break;
-            sz bytes_read = (sz)n;
+            // TCP: read raw bytes
+            sz? bytes_read = c.socket.read(&read_buf);
+            if (catch bytes_read) break;
+            if (bytes_read == 0) break;
 
             c.last_activity = security::current_time_sec();
             c.packet_buf.feed((String)read_buf[0..bytes_read - 1]);

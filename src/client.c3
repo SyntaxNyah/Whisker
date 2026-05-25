@@ -14,8 +14,6 @@ import std::io;
 import std::net::tcp;
 import std::time;
 
-extern fn long c_send(int sock, char* buf, usz len, int flags) @cname("send");
-
 // ============================================================
 // Client struct
 // ============================================================
@@ -143,10 +141,8 @@ fn void Client.send_raw(&self, String data) {
         // WebSocket: wrap in a text frame
         websocket_send_text(&self.socket, data);
     } else {
-        // TCP: send raw bytes directly via C send()
-        int fd = *(int*)&self.socket;
-        long sent = c_send(fd, data.ptr, data.len, 0);
-        if (sent < 0) {
+        // TCP: send raw bytes
+        if (catch self.socket.write(data)) {
             self.connected = false;
         }
     }

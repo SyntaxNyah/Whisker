@@ -94,8 +94,10 @@ const int     MAX_BAN_REASON_LEN            = 255;
 const String  SERVER_SOFTWARE               = "Whisker";
 const String  SERVER_VERSION                = "0.1.0";
 
-// -- Decryptor (legacy FantaCrypt — we always send NOENCRYPT) --
-const String  DECRYPTOR_PACKET              = "decryptor#NOENCRYPT#%";
+// -- Decryptor (legacy FantaCrypt — key 34 = no encryption) --
+// Must be numeric to match Akashi/tsuserver format. The FL packet's
+// "noencryption" feature flag tells clients not to encrypt regardless.
+const String  DECRYPTOR_PACKET              = "decryptor#34#%";
 
 // -- Packet terminators --
 const char    FIELD_SEPARATOR               = '#';
