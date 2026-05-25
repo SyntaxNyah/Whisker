@@ -621,7 +621,7 @@ Output binary: `build/whisker` (or `build/whisker.exe` on Windows)
 ### Quick Network Tests
 
 ```bash
-# Test TCP connection (you should see "decryptor#NOENCRYPT#%")
+# Test TCP connection (you should see "decryptor#34#%")
 nc localhost 27016
 
 # Test WebSocket connection

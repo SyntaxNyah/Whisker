@@ -105,7 +105,7 @@ Here's what happens from the moment someone connects to when they're chatting in
 CLIENT                                          SERVER
   |                                                |
   |  ---- TCP connect or WS handshake -----------> |
-  |  <--- decryptor#NOENCRYPT#%  (legacy, ignore)  |
+  |  <--- decryptor#34#%  (legacy, no encryption)   |
   |                                                |
   |  ---- HI#<hardware_id>#% -------------------> |  Ban check happens here
   |  <--- ID#<players>#Whisker#0.1.0#%             |
@@ -150,10 +150,10 @@ These packets happen in order during connection setup. You can't skip any.
 ### decryptor (Server -> Client)
 
 ```
-decryptor#NOENCRYPT#%
+decryptor#34#%
 ```
 
-A legacy artifact from when the protocol supported FantaCrypt encryption. Always `NOENCRYPT` now. Sent immediately when a client connects.
+A legacy artifact from when the protocol supported FantaCrypt encryption. The value `34` is a numeric key matching the Akashi/tsuserver convention. The `noencryption` feature in the FL packet tells clients not to encrypt. Sent immediately when a client connects.
 
 ### HI (Client -> Server)
 

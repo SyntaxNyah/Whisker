@@ -53,7 +53,7 @@ Whisker is an Attorney Online 2 (AO2) server written in C3. It implements the fu
 ### Protocol Flow
 
 1. Client connects (TCP or WebSocket)
-2. Server sends `decryptor#NOENCRYPT#%`
+2. Server sends `decryptor#34#%`
 3. Handshake: HI → ID → askchaa → SI → RC → SC → RM → SM → RD → DONE
 4. Client selects character (CC → PV)
 5. In-game: MS (IC), CT (OOC), MC (music/area), CH (keepalive), etc.
