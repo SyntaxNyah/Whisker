@@ -1,0 +1,12 @@
+{
+    "version": "1.0.0",
+    "authors": ["Whisker Community"],
+    "langrev": "1",
+    "warnings": ["no-unused"],
+    "targets": {
+        "server_advertiser": {
+            "type": "dynamic-lib",
+            "sources-override": ["../server_advertiser.c3"]
+        }
+    }
+}

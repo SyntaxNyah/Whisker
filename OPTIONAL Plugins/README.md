@@ -42,9 +42,11 @@ Server operators never need to touch source code. They open the right folder, dr
 
 ```
 OPTIONAL Plugins/
-  Windows/          ← .dll files for Windows servers
-  Linux/            ← .so files for Linux servers
-  *.c3              ← source code (learning exercise)
+  Windows/              ← .dll files for Windows servers
+  Linux/                ← .so files for Linux servers
+  *.c3                  ← source code (learning exercise)
+  <plugin>/project.json ← build config for each plugin
+  build_plugins.sh      ← script to rebuild all plugins
 ```
 
 ## How to Use
@@ -68,6 +70,31 @@ Delete the `.so` / `.dll` file from `plugins/` and restart.
 **Don't want any of these?**
 
 Delete this entire `OPTIONAL Plugins` folder. It won't affect your server.
+
+## Rebuilding Plugins (for developers)
+
+The pre-built binaries in `Windows/` and `Linux/` are ready to use. If you need to rebuild them (e.g., after modifying the source), you'll need [c3c](https://c3-lang.org/) installed.
+
+**Quick rebuild (all plugins, both platforms):**
+```bash
+./build_plugins.sh all
+```
+
+**Build for a single platform:**
+```bash
+./build_plugins.sh linux     # Linux .so files only
+./build_plugins.sh windows   # Windows .dll files only
+./build_plugins.sh native    # Current platform only (default)
+```
+
+**Manual build (single plugin):**
+```bash
+cd case_manager/             # or server_advertiser/
+c3c build                    # builds for current platform
+# Output: out/case_manager.so (Linux) or out/case_manager.dll (Windows)
+```
+
+Each plugin has its own `project.json` in a subdirectory (e.g., `case_manager/project.json`). The key setting is `"type": "dynamic-lib"` which tells c3c to produce a `.so` / `.dll` instead of an executable.
 
 ---
 

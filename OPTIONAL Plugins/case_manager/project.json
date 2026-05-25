@@ -1,0 +1,12 @@
+{
+    "version": "1.0.0",
+    "authors": ["Whisker Community"],
+    "langrev": "1",
+    "warnings": ["no-unused"],
+    "targets": {
+        "case_manager": {
+            "type": "dynamic-lib",
+            "sources-override": ["../case_manager.c3"]
+        }
+    }
+}

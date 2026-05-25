@@ -17,10 +17,10 @@ A clean, minimal Attorney Online 2 server written in C3.
 c3c build
 
 # Run (config/ directory included with defaults)
-./build/whisker
+./out/whisker
 
 # Custom config directory
-./build/whisker -c /path/to/config
+./out/whisker -c /path/to/config
 ```
 Note: This is just if you want to run a config file that's not in the default directory. For full build guide see here: https://github.com/SyntaxNyah/Whisker/blob/main/docs/BUILD_GUIDE.md
 

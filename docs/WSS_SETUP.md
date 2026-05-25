@@ -113,7 +113,7 @@ Start Whisker, then test the tunnel:
 
 ```bash
 # First, make sure Whisker is running
-./build/whisker
+./out/whisker
 
 # In another terminal, test with curl (checks if the tunnel is reachable)
 curl -v https://ao.yourdomain.com
@@ -438,16 +438,16 @@ reverse_proxy_mode = false
 
 ```bash
 # Port 443 needs root on Linux (ports below 1024 are privileged)
-sudo ./build/whisker
+sudo ./out/whisker
 
 # Alternative: use a high port to avoid needing root
 # Change wss_port to 8443 in config.toml, then:
-./build/whisker
+./out/whisker
 # Players connect to: wss://ao.yourdomain.com:8443
 
 # Alternative: use setcap to allow non-root to bind port 443
-sudo setcap 'cap_net_bind_service=+ep' ./build/whisker
-./build/whisker    # now works on port 443 without sudo
+sudo setcap 'cap_net_bind_service=+ep' ./out/whisker
+./out/whisker    # now works on port 443 without sudo
 ```
 
 ### Downsides

@@ -21,13 +21,17 @@ c3c init my_plugin --template dynamic-lib
 
 ### 2. Implement the plugin interface
 
-Your plugin must export three functions with C-compatible signatures:
+Your plugin must export three functions with C-compatible signatures.
+
+**Important:** Handler functions use `void*` for client and packet parameters — this
+is required for ABI compatibility with the server's function pointer types. Use the
+`PluginAPI` function pointers to interact with clients (e.g., `api.client_send_msg`).
 
 ```c3
 module my_plugin;
 
 import whisker::plugin;
-import whisker::client;
+import std::io;
 
 // Called by Whisker to get plugin metadata
 fn PluginInfo whisker_plugin_info() @export("whisker_plugin_info") {
@@ -39,8 +43,12 @@ fn PluginInfo whisker_plugin_info() @export("whisker_plugin_info") {
     };
 }
 
+plugin::PluginAPI* api;
+
 // Called once at server startup
-fn bool whisker_plugin_init(plugin::PluginAPI* api) @export("whisker_plugin_init") {
+fn bool whisker_plugin_init(plugin::PluginAPI* plugin_api) @export("whisker_plugin_init") {
+    api = plugin_api;
+
     // Register commands
     api.register_command(
         "hello",                    // command name (without /)
@@ -66,31 +74,69 @@ fn void whisker_plugin_shutdown() @export("whisker_plugin_shutdown") {
 }
 
 // ---- Your command handlers ----
+// Parameters are void* — use the PluginAPI to interact with clients
 
-fn void cmd_hello(client::Client* c, String args) {
-    c.send_server_message("Hello from My Plugin!");
+fn void cmd_hello(void* c, String args) {
+    api.client_send_msg(c, "Hello from My Plugin!");
 }
 
 // ---- Your packet hooks ----
 // Return true to consume the packet (stop further processing)
 // Return false to let other hooks and the default handler run
 
-fn bool on_ic_message(client::Client* c, protocol::Packet* pkt) {
+fn bool on_ic_message(void* c, void* pkt) {
     // Example: log all IC messages
+    io::printfn("[my_plugin] IC message from UID %d", api.client_get_uid(c));
     // Return false so the message still gets processed normally
     return false;
 }
 ```
 
-### 3. Build as a shared library
+### 3. Set up `project.json`
 
-```bash
-c3c build  # with type = "dynamic-lib" in project.json
+Create a `project.json` in your plugin's directory:
+
+```json
+{
+    "version": "1.0.0",
+    "authors": ["Your Name"],
+    "langrev": "1",
+    "warnings": ["no-unused"],
+    "targets": {
+        "my_plugin": {
+            "type": "dynamic-lib",
+            "sources-override": ["../my_plugin.c3"]
+        }
+    }
+}
 ```
 
-This produces `my_plugin.so` (Linux) or `my_plugin.dll` (Windows).
+Key settings:
+- **`type: "dynamic-lib"`** — builds a `.so` (Linux) or `.dll` (Windows) instead of an executable
+- **`sources-override`** — points to your `.c3` source file(s). Use this to control exactly which files are compiled
 
-### 4. Deploy
+### 4. Build
+
+```bash
+cd my_plugin/          # directory containing project.json
+c3c build              # builds for current platform
+```
+
+This produces `out/my_plugin.so` (Linux) or `out/my_plugin.dll` (Windows).
+
+**Cross-compilation** (build Linux .so from Windows or vice versa):
+```bash
+c3c build --target linux-x64 --link-libc=no     # Linux .so from any OS
+c3c build --target windows-x64                    # Windows .dll from any OS
+```
+
+> **Note:** `--link-libc=no` is needed for Linux cross-compilation from Windows
+> because the Linux C runtime isn't available locally. The symbols resolve at
+> runtime when the server loads the plugin. If your plugin uses `std::thread`
+> or other heavy stdlib features, you may need to provide stub libraries
+> (see the `build_plugins.sh` script in `OPTIONAL Plugins/` for an example).
+
+### 5. Deploy
 
 Copy the `.so` or `.dll` file to the server's `plugins/` directory.
 Restart Whisker. Your plugin loads automatically.
@@ -110,7 +156,7 @@ api.register_command(name, handler, required_perms, description, plugin_name);
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `name` | `String` | Command name without `/` |
-| `handler` | `fn void(Client*, String)` | Handler function |
+| `handler` | `fn void(void*, String)` | Handler function |
 | `required_perms` | `ulong` | Permission bitfield (0 = no perms needed) |
 | `description` | `String` | Help text |
 | `plugin_name` | `String` | Your plugin's name |
@@ -133,117 +179,159 @@ api.register_hook(header, hook_fn, plugin_name);
 | Parameter | Type | Description |
 |-----------|------|-------------|
 | `header` | `String` | AO2 packet header ("MS", "CT", "MC", etc.) |
-| `hook_fn` | `fn bool(Client*, Packet*)` | Hook function |
+| `hook_fn` | `fn bool(void*, void*)` | Hook function |
 | `plugin_name` | `String` | Your plugin's name |
 
 Hook functions return `bool`:
 - `true` = consume the packet (stop processing)
 - `false` = pass through to next hook / default handler
 
-### Client API (what you can do with a Client*)
+### Client API (via PluginAPI function pointers)
+
+Client pointers are `void*` in plugin handlers. Use the PluginAPI to interact:
 
 ```c3
-c.send_server_message("text");           // Send OOC from server
-c.send_packet("HEADER", fields);         // Send any packet
-c.send_raw("RAW#data#%");               // Send raw wire data
+// Messaging
+api.client_send_msg(c, "text");          // Send OOC server message
+api.client_send_raw(c, "RAW#data#%");    // Send raw wire data
 
-c.uid                                    // Player's UID
-c.char_name                              // Current character name
-c.display_name()                         // Best display name
-c.ooc_name                              // OOC username
-c.area_id                               // Current area index
-c.is_moderator()                         // Is authenticated mod?
-c.has_permission(PERM_BAN)              // Check specific permission
-c.is_muted                              // IC muted?
-c.is_ooc_muted                          // OOC muted?
-c.connected                             // Still connected?
+// Client info
+api.client_get_uid(c)                    // Player's UID (int)
+api.client_get_area(c)                   // Current area index (int)
+api.client_display_name(c)               // Best display name (String)
+api.client_get_char_id(c)                // Character ID (int)
+api.client_get_char_name(c)              // Character name (String)
+api.client_get_showname(c)               // Showname (String)
+api.client_is_mod(c)                     // Is authenticated mod? (bool)
+api.client_is_joined(c)                  // Has finished joining? (bool)
+api.client_set_position(c, "def")        // Set courtroom position
+
+// Server/Area operations
+api.find_client(uid)                     // Find client by UID (void*)
+api.broadcast_area_msg(area_id, "text")  // OOC message to entire area
+api.broadcast_area_raw(area_id, "data")  // Raw packet to entire area
+api.broadcast_arup(arup_type)            // Broadcast area update
+api.get_area_count()                     // Number of areas (int)
+api.force_move(c, new_area_id)           // Move client to area
+
+// CM (Case Manager) operations
+api.area_is_cm(area_id, uid)             // Is UID a CM? (bool)
+api.area_add_cm(area_id, uid)            // Add UID as CM
+api.area_remove_cm(area_id, uid)         // Remove UID from CM
+api.area_cm_count(area_id)               // Number of CMs (int)
+api.area_clear_cms(area_id)              // Remove all CMs
+api.area_uninvite(area_id, uid)          // Remove from invite list
+api.area_set_status(area_id, status)     // Set area status
+api.area_get_status(area_id)             // Get area status (int)
+api.area_get_name(area_id)               // Get area name (String)
+api.area_set_song(area_id, song, uid)    // Set playing song
 ```
 
 ## Example Plugins
 
-Each example below is a complete, copy-paste-ready plugin. The full file
-is shown so you can see exactly how everything fits together.
+Each example below uses the standalone pattern — types defined locally,
+`void*` handler parameters, PluginAPI function pointers. This is the
+same pattern used by the production plugins in `OPTIONAL Plugins/`.
+
+**Important:** The `PluginAPI` struct layout must exactly match the server's
+definition in `plugin.c3`. For production plugins, copy the full struct from
+`case_manager.c3` — it has every field correctly defined. The examples below
+include the full struct so they are self-contained and copy-paste-ready.
 
 ---
 
-### Example 1: Magic 8-Ball (simple command, no permissions)
+### Example 1: Rules Command (simplest possible plugin)
 
-A player types `/8ball Will I win this case?` and gets a random answer.
+One command, no hooks, no permissions. Player types `/rules`, sees the
+server rules. This is the "hello world" of Whisker plugins.
 
 ```c3
-// file: 8ball.c3
-module eightball;
+// file: rules.c3
+module rules;
 
-import whisker::plugin;
-import whisker::client;
-import whisker::security;
 import std::io;
 
-const String[] ANSWERS = {
-    "It is certain.",
-    "Without a doubt.",
-    "You may rely on it.",
-    "Yes, definitely.",
-    "As I see it, yes.",
-    "Most likely.",
-    "Reply hazy, try again.",
-    "Ask again later.",
-    "Better not tell you now.",
-    "Cannot predict now.",
-    "Don't count on it.",
-    "My reply is no.",
-    "My sources say no.",
-    "Outlook not so good.",
-    "Very doubtful.",
-};
+// -- Standalone plugin types (must match server's plugin.c3) --
+struct PluginInfo { String name; String version; String author; String description; }
+alias CommandHandler = fn void(void* client, String args);
+alias PacketHook     = fn bool(void* client, void* packet);
 
-fn plugin::PluginInfo whisker_plugin_info() @export("whisker_plugin_info") {
-    return plugin::PluginInfo {
-        .name        = "8ball",
-        .version     = "1.0.0",
-        .author      = "Whisker Community",
-        .description = "Magic 8-Ball command",
-    };
+struct PluginAPI {
+    fn void(String, CommandHandler, ulong, String, String) register_command;
+    fn void(String, PacketHook, String)                    register_hook;
+    fn void*(int)      find_client;
+    fn void(int, String) broadcast_area_msg;
+    fn void(int, String) broadcast_area_raw;
+    fn void(int)       broadcast_arup;
+    fn int()           get_area_count;
+    fn bool(int, int)  area_is_cm;
+    fn void(int, int)  area_add_cm;
+    fn void(int, int)  area_remove_cm;
+    fn int(int)        area_cm_count;
+    fn void(int)       area_clear_cms;
+    fn void(int, int)  area_uninvite;
+    fn void(int, int)  area_set_status;
+    fn int(int)        area_get_status;
+    fn String(int)     area_get_name;
+    fn void(int, String, int) area_set_song;
+    fn void(void*, int) force_move;
+    fn void(void*, String) client_send_msg;
+    fn void(void*, String) client_send_raw;
+    fn int(void*)      client_get_uid;
+    fn int(void*)      client_get_area;
+    fn bool(void*)     client_is_mod;
+    fn String(void*)   client_display_name;
+    fn int(void*)      client_get_char_id;
+    fn String(void*)   client_get_showname;
+    fn String(void*)   client_get_char_name;
+    fn bool(void*)     client_is_joined;
+    fn void(void*, String) client_set_position;
 }
 
-fn bool whisker_plugin_init(plugin::PluginAPI* api) @export("whisker_plugin_init") {
-    api.register_command("8ball", &cmd_8ball, 0, "Ask the Magic 8-Ball", "8ball");
-    return true;
+PluginAPI* api;
+
+fn PluginInfo whisker_plugin_info() @export("whisker_plugin_info") {
+    return { "Rules", "1.0.0", "Whisker Community", "Displays server rules" };
+}
+
+fn void whisker_plugin_init(PluginAPI* a) @export("whisker_plugin_init") {
+    api = a;
+    api.register_command("rules", &cmd_rules, 0, "Show server rules", "Rules");
 }
 
 fn void whisker_plugin_shutdown() @export("whisker_plugin_shutdown") {}
 
-fn void cmd_8ball(client::Client* c, String args) {
-    if (args.len == 0) {
-        c.send_server_message("Usage: /8ball <question>");
-        return;
-    }
-
-    // Pick a random answer using the current time and player UID as seed
-    long seed = security::current_time_sec() ^ (long)c.uid;
-    int index = (int)((seed >> 4) % (long)ANSWERS.len);
-    if (index < 0) index = -index;
-
-    c.send_server_message(string::tformat("8-Ball says: %s", ANSWERS[index]));
+fn void cmd_rules(void* c, String args) {
+    api.client_send_msg(c, "=== Server Rules ===");
+    api.client_send_msg(c, "1. Be respectful to all players.");
+    api.client_send_msg(c, "2. No spamming or flooding.");
+    api.client_send_msg(c, "3. Stay in character in IC chat.");
+    api.client_send_msg(c, "4. Listen to moderators.");
+    api.client_send_msg(c, "5. Have fun!");
+    api.client_send_msg(c, "====================");
 }
 ```
 
-**project.json for this plugin:**
+**project.json** (create a `rules/` subdirectory for it):
 ```json
 {
+    "version": "1.0.0",
+    "langrev": "1",
     "targets": {
-        "eightball": {
-            "type": "dynamic-lib"
+        "rules": {
+            "type": "dynamic-lib",
+            "sources-override": ["../rules.c3"]
         }
-    },
-    "sources": ["8ball.c3"]
+    }
 }
 ```
 
 **Build and deploy:**
 ```bash
+cd rules/
 c3c build
-cp build/libeightball.so /path/to/whisker/plugins/
+cp out/rules.so /path/to/whisker/plugins/   # Linux
+cp out/rules.dll /path/to/whisker/plugins/   # Windows
 ```
 
 ---
@@ -253,40 +341,37 @@ cp build/libeightball.so /path/to/whisker/plugins/
 Sends a custom welcome message when a player finishes joining. Hooks the
 `RD` packet (the last step of the join handshake).
 
+> The `PluginAPI` struct is the same as Example 1 — omitted for brevity.
+> Copy it from Example 1 or from `case_manager.c3`.
+
 ```c3
 // file: welcome.c3
 module welcome;
 
-import whisker::plugin;
-import whisker::client;
-import whisker::protocol;
+struct PluginInfo { String name; String version; String author; String description; }
+// ... PluginAPI struct same as Example 1 (omitted for brevity) ...
 
-fn plugin::PluginInfo whisker_plugin_info() @export("whisker_plugin_info") {
-    return plugin::PluginInfo {
-        .name        = "Welcome",
-        .version     = "1.0.0",
-        .author      = "Whisker Community",
-        .description = "Custom welcome message on join",
-    };
+PluginAPI* api;
+
+fn PluginInfo whisker_plugin_info() @export("whisker_plugin_info") {
+    return { "Welcome", "1.0.0", "Whisker Community", "Custom welcome message on join" };
 }
 
-fn bool whisker_plugin_init(plugin::PluginAPI* api) @export("whisker_plugin_init") {
-    // Hook the RD packet — this fires when a client finishes joining
+fn void whisker_plugin_init(PluginAPI* a) @export("whisker_plugin_init") {
+    api = a;
     api.register_hook("RD", &on_player_ready, "Welcome");
-    return true;
 }
 
 fn void whisker_plugin_shutdown() @export("whisker_plugin_shutdown") {}
 
-fn bool on_player_ready(client::Client* c, protocol::Packet* pkt) {
-    // Send a few welcome lines after the default handler runs.
+fn bool on_player_ready(void* c, void* pkt) {
     // We return false so the normal RD handler still processes
-    // (allocates UID, sends DONE, etc.) — our message just adds on top.
-    c.send_server_message("=============================");
-    c.send_server_message("Welcome to the server!");
-    c.send_server_message("Type /help for commands.");
-    c.send_server_message("Type /rules to see server rules.");
-    c.send_server_message("=============================");
+    // (allocates UID, sends DONE, etc.) — our message adds on top.
+    api.client_send_msg(c, "=============================");
+    api.client_send_msg(c, "Welcome to the server!");
+    api.client_send_msg(c, "Type /help for commands.");
+    api.client_send_msg(c, "Type /rules to see server rules.");
+    api.client_send_msg(c, "=============================");
 
     return false; // IMPORTANT: let the default handler run too
 }
@@ -297,426 +382,78 @@ fn bool on_player_ready(client::Client* c, protocol::Packet* pkt) {
 ### Example 3: Warn Command (mod-only command)
 
 Adds `/warn <uid> <reason>` that sends a visible warning to a player.
-Requires MUTE permission (basic mod).
+Requires MUTE permission (permission bit 1).
 
 ```c3
 // file: warn.c3
 module warn_plugin;
 
-import whisker::plugin;
-import whisker::client;
-import whisker::commands;
 import std::io;
 
-fn plugin::PluginInfo whisker_plugin_info() @export("whisker_plugin_info") {
-    return plugin::PluginInfo {
-        .name        = "Warn",
-        .version     = "1.0.0",
-        .author      = "Whisker Community",
-        .description = "Adds /warn command for moderators",
-    };
+struct PluginInfo { String name; String version; String author; String description; }
+// ... PluginAPI struct same as Example 1 (omitted for brevity) ...
+
+const ulong PERM_MUTE = 1;  // lowest mod tier
+PluginAPI* api;
+
+fn PluginInfo whisker_plugin_info() @export("whisker_plugin_info") {
+    return { "Warn", "1.0.0", "Whisker Community", "Adds /warn command for moderators" };
 }
 
-fn bool whisker_plugin_init(plugin::PluginAPI* api) @export("whisker_plugin_init") {
-    // PERM_MUTE = 1, the lowest mod tier
-    api.register_command("warn", &cmd_warn, commands::PERM_MUTE, "Warn a player", "Warn");
-    return true;
+fn void whisker_plugin_init(PluginAPI* a) @export("whisker_plugin_init") {
+    api = a;
+    api.register_command("warn", &cmd_warn, PERM_MUTE, "Warn a player", "Warn");
 }
 
 fn void whisker_plugin_shutdown() @export("whisker_plugin_shutdown") {}
 
-fn void cmd_warn(client::Client* c, String args) {
-    // Parse: /warn <uid> <reason>
+fn void cmd_warn(void* c, String args) {
     if (args.len == 0) {
-        c.send_server_message("Usage: /warn <uid> <reason>");
+        api.client_send_msg(c, "Usage: /warn <uid> <reason>");
         return;
     }
 
-    // Split into UID and reason
     int target_uid = -1;
     String reason = "No reason given.";
 
-    if (args.index_of_char(' ')) |space| {
-        target_uid = args[0..space].to_int() ?? -1;
+    if (try space = args.index_of_char(' ')) {
+        target_uid = args[0..space - 1].to_int() ?? -1;
         reason = args[space + 1..].trim();
     } else {
         target_uid = args.to_int() ?? -1;
     }
 
     if (target_uid < 0) {
-        c.send_server_message("Invalid UID.");
+        api.client_send_msg(c, "Invalid UID.");
         return;
     }
 
-    // Find the target player
-    // NOTE: In a real plugin you'd use the server API to find clients.
-    // For now, we send to the caller as a demo.
-    c.send_server_message(string::tformat(
-        "WARNING sent to UID %d: %s", target_uid, reason
-    ));
+    void* target = api.find_client(target_uid);
+    if (target != null) {
+        api.client_send_msg(target, string::tformat(
+            "=== WARNING from %s: %s ===", api.client_display_name(c), reason));
+    }
 
-    io::printfn("[warn] %s warned UID %d: %s", c.display_name(), target_uid, reason);
+    api.client_send_msg(c, string::tformat("WARNING sent to UID %d: %s", target_uid, reason));
+    io::printfn("[warn] %s warned UID %d: %s", api.client_display_name(c), target_uid, reason);
 }
 ```
 
 ---
 
-### Example 4: Profanity Filter (block bad words in IC chat)
+### Example 4: MOTD Rotation (hook on join)
 
-Hooks the `MS` (in-character) packet. If the message contains a banned
-word, the message is blocked and the player gets a notice. The message
-never reaches other players.
-
-```c3
-// file: profanity_filter.c3
-module profanity_filter;
-
-import whisker::plugin;
-import whisker::client;
-import whisker::protocol;
-import std::io;
-
-// Add your banned words here. Keep them lowercase — we lowercase
-// the message before checking.
-const String[] BANNED_WORDS = {
-    "badword1",
-    "badword2",
-    "badword3",
-};
-
-fn plugin::PluginInfo whisker_plugin_info() @export("whisker_plugin_info") {
-    return plugin::PluginInfo {
-        .name        = "Profanity Filter",
-        .version     = "1.0.0",
-        .author      = "Whisker Community",
-        .description = "Blocks IC messages containing banned words",
-    };
-}
-
-fn bool whisker_plugin_init(plugin::PluginAPI* api) @export("whisker_plugin_init") {
-    api.register_hook("MS", &on_ic_message, "Profanity Filter");
-    return true;
-}
-
-fn void whisker_plugin_shutdown() @export("whisker_plugin_shutdown") {}
-
-fn bool on_ic_message(client::Client* c, protocol::Packet* pkt) {
-    // MS packet field 4 is the message text
-    if (pkt.field_count < 5) return false;
-
-    String message = pkt.fields[4];
-
-    // Check each banned word
-    foreach (word : BANNED_WORDS) {
-        if (message.contains(word)) {
-            c.send_server_message("Your message was blocked by the profanity filter.");
-            io::printfn("[profanity] Blocked message from %s (UID %d): %s",
-                c.display_name(), c.uid, message);
-            return true; // CONSUME the packet — it never gets broadcast
-        }
-    }
-
-    return false; // Clean message, let it through
-}
-```
-
----
-
-### Example 5: Rules Command (simple text display)
-
-The simplest possible plugin. One command, no hooks, no permissions.
-Player types `/rules`, sees the server rules.
-
-```c3
-// file: rules.c3
-module rules;
-
-import whisker::plugin;
-import whisker::client;
-
-fn plugin::PluginInfo whisker_plugin_info() @export("whisker_plugin_info") {
-    return plugin::PluginInfo {
-        .name        = "Rules",
-        .version     = "1.0.0",
-        .author      = "Whisker Community",
-        .description = "Displays server rules",
-    };
-}
-
-fn bool whisker_plugin_init(plugin::PluginAPI* api) @export("whisker_plugin_init") {
-    api.register_command("rules", &cmd_rules, 0, "Show server rules", "Rules");
-    return true;
-}
-
-fn void whisker_plugin_shutdown() @export("whisker_plugin_shutdown") {}
-
-fn void cmd_rules(client::Client* c, String args) {
-    c.send_server_message("=== Server Rules ===");
-    c.send_server_message("1. Be respectful to all players.");
-    c.send_server_message("2. No spamming or flooding.");
-    c.send_server_message("3. Stay in character in IC chat.");
-    c.send_server_message("4. Listen to moderators.");
-    c.send_server_message("5. Have fun!");
-    c.send_server_message("====================");
-}
-```
-
----
-
-### Example 6: Coinflip PvP (two commands, player state)
-
-Players challenge each other to a coinflip. `/coinflip heads` or
-`/coinflip tails`. First player sets the challenge, second player
-picks the other side, result is announced.
-
-```c3
-// file: coinflip.c3
-module coinflip;
-
-import whisker::plugin;
-import whisker::client;
-import whisker::security;
-import std::io;
-
-// Track one active challenge at a time (per-area would need more state)
-struct Challenge {
-    int  challenger_uid;
-    bool challenger_picked_heads;
-    bool active;
-}
-
-Challenge current_challenge;
-
-fn plugin::PluginInfo whisker_plugin_info() @export("whisker_plugin_info") {
-    return plugin::PluginInfo {
-        .name        = "Coinflip PvP",
-        .version     = "1.0.0",
-        .author      = "Whisker Community",
-        .description = "PvP coinflip challenges",
-    };
-}
-
-fn bool whisker_plugin_init(plugin::PluginAPI* api) @export("whisker_plugin_init") {
-    current_challenge.active = false;
-    api.register_command("coinflip", &cmd_coinflip, 0, "Coinflip PvP challenge", "Coinflip PvP");
-    return true;
-}
-
-fn void whisker_plugin_shutdown() @export("whisker_plugin_shutdown") {}
-
-fn void cmd_coinflip(client::Client* c, String args) {
-    if (args.len == 0) {
-        c.send_server_message("Usage: /coinflip <heads|tails>");
-        return;
-    }
-
-    bool picked_heads;
-    if (args == "heads" || args == "h") {
-        picked_heads = true;
-    } else if (args == "tails" || args == "t") {
-        picked_heads = false;
-    } else {
-        c.send_server_message("Pick heads or tails. Example: /coinflip heads");
-        return;
-    }
-
-    // If no active challenge, start one
-    if (!current_challenge.active) {
-        current_challenge.challenger_uid = c.uid;
-        current_challenge.challenger_picked_heads = picked_heads;
-        current_challenge.active = true;
-
-        c.send_server_message(string::tformat(
-            "You picked %s! Waiting for someone to pick the other side...",
-            picked_heads ? "heads" : "tails"
-        ));
-        return;
-    }
-
-    // Someone is responding to the challenge
-    if (current_challenge.challenger_uid == c.uid) {
-        c.send_server_message("You already have an open challenge! Wait for someone else.");
-        return;
-    }
-
-    // Must pick the opposite side
-    if (picked_heads == current_challenge.challenger_picked_heads) {
-        c.send_server_message(string::tformat(
-            "That side is taken! Pick %s.",
-            picked_heads ? "tails" : "heads"
-        ));
-        return;
-    }
-
-    // Flip the coin
-    long seed = security::current_time_sec() ^ (long)c.uid ^ (long)current_challenge.challenger_uid;
-    bool result_is_heads = ((seed >> 7) % 2) == 0;
-
-    // Determine winner
-    bool challenger_wins = (result_is_heads == current_challenge.challenger_picked_heads);
-
-    String result_str = result_is_heads ? "HEADS" : "TAILS";
-    int winner_uid = challenger_wins ? current_challenge.challenger_uid : c.uid;
-    int loser_uid  = challenger_wins ? c.uid : current_challenge.challenger_uid;
-
-    c.send_server_message(string::tformat(
-        "The coin lands on %s! UID %d wins, UID %d loses!",
-        result_str, winner_uid, loser_uid
-    ));
-
-    // Reset
-    current_challenge.active = false;
-}
-```
-
----
-
-### Example 7: Music Logger (packet hook, logging only)
-
-Logs every music change to the server console. Doesn't block anything —
-purely observational. Shows how a hook can monitor without interfering.
-
-```c3
-// file: music_logger.c3
-module music_logger;
-
-import whisker::plugin;
-import whisker::client;
-import whisker::protocol;
-import std::io;
-
-fn plugin::PluginInfo whisker_plugin_info() @export("whisker_plugin_info") {
-    return plugin::PluginInfo {
-        .name        = "Music Logger",
-        .version     = "1.0.0",
-        .author      = "Whisker Community",
-        .description = "Logs all music changes to console",
-    };
-}
-
-fn bool whisker_plugin_init(plugin::PluginAPI* api) @export("whisker_plugin_init") {
-    api.register_hook("MC", &on_music_change, "Music Logger");
-    return true;
-}
-
-fn void whisker_plugin_shutdown() @export("whisker_plugin_shutdown") {}
-
-fn bool on_music_change(client::Client* c, protocol::Packet* pkt) {
-    if (pkt.field_count < 1) return false;
-
-    String track = pkt.fields[0];
-
-    // Only log actual music (has a file extension), not area changes
-    if (track.contains(".")) {
-        io::printfn("[music-log] %s (UID %d) played: %s",
-            c.display_name(), c.uid, track);
-    }
-
-    return false; // Always pass through — we're just logging
-}
-```
-
----
-
-### Example 8: AFK Detector (command + hook combo)
-
-Tracks player activity. If a player hasn't sent an IC message in 10
-minutes, they show as AFK in `/afklist`. Combines a command AND a hook.
-
-```c3
-// file: afk_detector.c3
-module afk_detector;
-
-import whisker::plugin;
-import whisker::client;
-import whisker::protocol;
-import whisker::security;
-import std::io;
-
-const long AFK_THRESHOLD_SEC = 600; // 10 minutes
-const int  MAX_TRACKED       = 512;
-
-// Track last IC message time per UID
-int[MAX_TRACKED]  tracked_uids;
-long[MAX_TRACKED] last_ic_time;
-int               tracked_count = 0;
-
-fn plugin::PluginInfo whisker_plugin_info() @export("whisker_plugin_info") {
-    return plugin::PluginInfo {
-        .name        = "AFK Detector",
-        .version     = "1.0.0",
-        .author      = "Whisker Community",
-        .description = "Tracks AFK players via IC activity",
-    };
-}
-
-fn bool whisker_plugin_init(plugin::PluginAPI* api) @export("whisker_plugin_init") {
-    api.register_command("afklist", &cmd_afklist, 0, "Show AFK players", "AFK Detector");
-    api.register_hook("MS", &on_ic_activity, "AFK Detector");
-    return true;
-}
-
-fn void whisker_plugin_shutdown() @export("whisker_plugin_shutdown") {}
-
-// Update last-seen time when someone sends an IC message
-fn bool on_ic_activity(client::Client* c, protocol::Packet* pkt) {
-    long now = security::current_time_sec();
-
-    // Find or create entry
-    for (int i = 0; i < tracked_count; i++) {
-        if (tracked_uids[i] == c.uid) {
-            last_ic_time[i] = now;
-            return false;
-        }
-    }
-
-    // New entry
-    if (tracked_count < MAX_TRACKED) {
-        tracked_uids[tracked_count] = c.uid;
-        last_ic_time[tracked_count] = now;
-        tracked_count++;
-    }
-
-    return false; // Never consume — just track
-}
-
-fn void cmd_afklist(client::Client* c, String args) {
-    long now = security::current_time_sec();
-    bool found_any = false;
-
-    c.send_server_message("=== AFK Players (10+ min no IC) ===");
-
-    for (int i = 0; i < tracked_count; i++) {
-        long idle_sec = now - last_ic_time[i];
-        if (idle_sec >= AFK_THRESHOLD_SEC) {
-            long idle_min = idle_sec / 60;
-            c.send_server_message(string::tformat(
-                "  UID %d — idle %d minutes", tracked_uids[i], (int)idle_min
-            ));
-            found_any = true;
-        }
-    }
-
-    if (!found_any) {
-        c.send_server_message("  No AFK players detected.");
-    }
-}
-```
-
----
-
-### Example 9: Message of the Day Rotation (hook on join)
-
-Instead of a static MOTD, rotate through a list of tips. Each player
-sees a different tip when they join.
+Rotate through a list of tips. Each player sees a different tip when
+they join.
 
 ```c3
 // file: motd_rotation.c3
 module motd_rotation;
 
-import whisker::plugin;
-import whisker::client;
-import whisker::protocol;
+struct PluginInfo { String name; String version; String author; String description; }
+// ... PluginAPI struct same as Example 1 (omitted for brevity) ...
+
+PluginAPI* api;
 
 const String[] TIPS = {
     "Tip: Use /pair <uid> to pair up for dual character scenes!",
@@ -730,30 +467,58 @@ const String[] TIPS = {
 
 int tip_counter = 0;
 
-fn plugin::PluginInfo whisker_plugin_info() @export("whisker_plugin_info") {
-    return plugin::PluginInfo {
-        .name        = "MOTD Rotation",
-        .version     = "1.0.0",
-        .author      = "Whisker Community",
-        .description = "Rotating tips shown on player join",
-    };
+fn PluginInfo whisker_plugin_info() @export("whisker_plugin_info") {
+    return { "MOTD Rotation", "1.0.0", "Whisker Community", "Rotating tips on join" };
 }
 
-fn bool whisker_plugin_init(plugin::PluginAPI* api) @export("whisker_plugin_init") {
+fn void whisker_plugin_init(PluginAPI* a) @export("whisker_plugin_init") {
+    api = a;
     api.register_hook("RD", &on_join, "MOTD Rotation");
-    return true;
 }
 
 fn void whisker_plugin_shutdown() @export("whisker_plugin_shutdown") {}
 
-fn bool on_join(client::Client* c, protocol::Packet* pkt) {
-    // Pick the next tip in rotation
+fn bool on_join(void* c, void* pkt) {
     int index = tip_counter % (int)TIPS.len;
     tip_counter++;
-
-    c.send_server_message(TIPS[index]);
-
+    api.client_send_msg(c, TIPS[index]);
     return false; // Let the normal join handler run
+}
+```
+
+---
+
+### Example 5: Music Logger (packet hook, logging only)
+
+Logs every music change to the server console. Doesn't block anything —
+purely observational. Shows how a hook can monitor without interfering.
+
+```c3
+// file: music_logger.c3
+module music_logger;
+
+import std::io;
+
+struct PluginInfo { String name; String version; String author; String description; }
+// ... PluginAPI struct same as Example 1 (omitted for brevity) ...
+
+PluginAPI* api;
+
+fn PluginInfo whisker_plugin_info() @export("whisker_plugin_info") {
+    return { "Music Logger", "1.0.0", "Whisker Community", "Logs music changes to console" };
+}
+
+fn void whisker_plugin_init(PluginAPI* a) @export("whisker_plugin_init") {
+    api = a;
+    api.register_hook("MC", &on_music_change, "Music Logger");
+}
+
+fn void whisker_plugin_shutdown() @export("whisker_plugin_shutdown") {}
+
+fn bool on_music_change(void* c, void* pkt) {
+    io::printfn("[music-log] %s (UID %d) changed music.",
+        api.client_display_name(c), api.client_get_uid(c));
+    return false; // Always pass through — we're just logging
 }
 ```
 
@@ -761,10 +526,11 @@ fn bool on_join(client::Client* c, protocol::Packet* pkt) {
 
 1. **Keep it focused.** One plugin per feature. Don't build a monolith.
 2. **Don't break existing behavior.** If your hook returns `true`, the default handler doesn't run.
-3. **Use named constants.** Import `whisker::config` for all the server constants.
+3. **Use named constants.** Define permission bits and status codes as `const` values.
 4. **Handle errors gracefully.** Don't crash the server from a plugin.
 5. **Document your commands.** Players should be able to `/help <your_command>`.
-6. **License as AGPL-3.0.** Keep the ecosystem open.
+6. **Use the standalone pattern.** Define types locally so your plugin compiles independently.
+7. **License as AGPL-3.0.** Keep the ecosystem open.
 
 ## Debugging
 
@@ -774,14 +540,15 @@ fn bool on_join(client::Client* c, protocol::Packet* pkt) {
 
 ```bash
 # Check if your plugin was loaded (look at server startup output)
-./build/whisker 2>&1 | grep -i plugin
+./out/whisker 2>&1 | grep -i plugin
 # Should show: [plugins] Loaded: My Plugin v1.0.0
 # and: [plugins] 1 plugins loaded
 
 # Common issues:
-# - "symbol not found: whisker_plugin_info" → your @export name doesn't match
-# - "failed to load libmy_plugin.so" → wrong architecture or missing C3 runtime
-# - Plugin silently not loading → check the file extension (.so on Linux, .dll on Windows)
+# - "missing required exports" → your @export names don't match exactly
+# - "Failed to load" → wrong architecture, missing libc linkage, or bad file path
+# - "undefined symbol: atexit" → rebuild with "type": "dynamic-lib" in project.json
+# - Plugin silently not loading → check file extension (.so on Linux, .dll on Windows)
 
 # List what's in the plugins directory
 ls -la plugins/
@@ -793,24 +560,37 @@ ls -la plugins/
 Here's a typical workflow for developing a plugin:
 
 ```bash
-# 1. Create your plugin project (one time)
-mkdir -p ~/my-plugins
-cd ~/my-plugins
-c3c init my_cool_plugin --template dynamic-lib
+# 1. Create your plugin source and build directory
+mkdir -p ~/my-plugins/my_cool_plugin
+# Write your plugin source file:
+nano ~/my-plugins/my_cool_plugin.c3
 
-# 2. Write your code
-nano src/my_cool_plugin.c3
+# 2. Create project.json in the build directory
+cat > ~/my-plugins/my_cool_plugin/project.json << 'EOF'
+{
+    "version": "1.0.0",
+    "langrev": "1",
+    "targets": {
+        "my_cool_plugin": {
+            "type": "dynamic-lib",
+            "sources-override": ["../my_cool_plugin.c3"]
+        }
+    }
+}
+EOF
 
 # 3. Build it
+cd ~/my-plugins/my_cool_plugin
 c3c build
 
 # 4. Deploy to Whisker
-cp build/libmy_cool_plugin.so /path/to/whisker/plugins/
+cp out/my_cool_plugin.so /path/to/whisker/plugins/   # Linux
+# or: cp out/my_cool_plugin.dll /path/to/whisker/plugins/   # Windows
 
 # 5. Restart Whisker to load it
 # (Ctrl+C the running server, then start it again)
 cd /path/to/whisker
-./build/whisker
+./out/whisker
 
 # 6. Test your command in-game
 # In the AO2 client OOC chat, type: /your_command
@@ -821,15 +601,44 @@ cd /path/to/whisker
 
 One-liner for the build-deploy-restart cycle:
 ```bash
-# From your plugin project directory
-c3c build && cp build/libmy_cool_plugin.so /path/to/whisker/plugins/ && echo "Deployed! Restart Whisker."
+# From your plugin's build directory (containing project.json)
+c3c build && cp out/my_cool_plugin.so /path/to/whisker/plugins/ && echo "Deployed! Restart Whisker."
 ```
+
+## Standalone vs. In-Tree Plugins
+
+There are two ways to build a plugin:
+
+### Standalone (recommended)
+
+All the examples above and the production plugins in `OPTIONAL Plugins/` use
+the standalone pattern. The plugin defines all types locally and communicates
+with the server entirely through function pointers. This is the recommended
+approach for distributable plugins.
+
+### In-Tree (imports from server)
+
+You can also place a `.c3` file in the server's `src/` directory and import
+from Whisker's modules (`whisker::plugin`, `whisker::client`, etc.). This is
+simpler for prototyping but ties your plugin to a specific server version and
+requires recompiling the entire server.
+
+Advantages of standalone:
+- The plugin source file is completely self-contained
+- It can be compiled without the server source tree
+- It only depends on the `PluginAPI` struct layout matching the server
+- Client pointers are `void*` (opaque) — interact through API function pointers only
+
+See `case_manager.c3` and `server_advertiser.c3` in `OPTIONAL Plugins/` for
+complete production standalone examples. Example 1 above shows the full
+`PluginAPI` struct definition you can copy into any standalone plugin.
 
 ## Architecture Notes
 
 Plugins are loaded once at server startup via `dlopen`/`LoadLibrary`.
-They stay loaded for the lifetime of the server. Hot-reloading is not
-supported yet — restart the server to pick up plugin changes.
+They stay loaded for the lifetime of the server. Hot-reload is supported
+via the `/reload` console command — this unloads all plugins, then
+re-scans and re-loads them from the `plugins/` directory.
 
 Plugin commands are checked BEFORE built-in commands. If your plugin
 registers a command with the same name as a built-in, your plugin wins.

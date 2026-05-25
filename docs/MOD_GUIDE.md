@@ -59,13 +59,13 @@ The `name` is what players see in the server browser. The `motd` is the first me
 ### 4. Run the server
 
 ```bash
-./build/whisker
+./out/whisker
 ```
 
 Or with a custom config directory:
 
 ```bash
-./build/whisker -c /path/to/my/config
+./out/whisker -c /path/to/my/config
 ```
 
 ---

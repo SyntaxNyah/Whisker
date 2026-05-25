@@ -625,20 +625,20 @@ This is the same approach used by Nyathena, KFO-Server, and other AO2 servers.
 c3c build           # Build the server
 ```
 
-Output binary: `build/whisker` (or `build/whisker.exe` on Windows)
+Output binary: `out/whisker` (or `out/whisker.exe` on Windows)
 
 ### Run
 
 ```bash
-./build/whisker                    # Use config/ directory
-./build/whisker -c /other/config   # Custom config path
-./build/whisker --help             # Show CLI options
-./build/whisker --version          # Show version
+./out/whisker                    # Use config/ directory
+./out/whisker -c /other/config   # Custom config path
+./out/whisker --help             # Show CLI options
+./out/whisker --version          # Show version
 ```
 
 ### Test with AO2 Client
 
-1. Start Whisker: `./build/whisker`
+1. Start Whisker: `./out/whisker`
 2. Open the AO2 desktop client
 3. Connect to `localhost:27016` (TCP) or use "Direct Connect"
 4. You should see the character select screen
@@ -646,7 +646,7 @@ Output binary: `build/whisker` (or `build/whisker.exe` on Windows)
 ### Test with webAO
 
 1. Make sure `enable_ws = true` in `config/config.toml`
-2. Start Whisker: `./build/whisker`
+2. Start Whisker: `./out/whisker`
 3. Open webAO: `https://web.aceattorneyonline.com/client.html?mode=join&connect=ws://localhost:27017`
 4. If the official webAO gives you mixed-content errors (HTTPS page trying to connect
    to ws://), use [webao.miku.pizza](https://webao.miku.pizza) instead — it's a fork
@@ -672,7 +672,7 @@ ss -tlnp | grep -E "27016|27017"
 c3c build
 
 # Rebuild and run in one line
-c3c build && ./build/whisker
+c3c build && ./out/whisker
 
 # Search for a function in the source
 grep -rn "fn.*handle_ms" src/

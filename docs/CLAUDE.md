@@ -75,9 +75,9 @@ Special characters in fields are escaped:
 ## Build & Run
 
 ```bash
-c3c build              # Build the server
-./build/whisker        # Run with default config dir
-./build/whisker -c /path/to/config  # Custom config directory
+c3c build             # Build the server
+./out/whisker         # Run with default config dir
+./out/whisker -c /path/to/config  # Custom config directory
 ```
 
 ## Configuration

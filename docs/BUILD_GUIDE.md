@@ -97,11 +97,11 @@ c3c build
 ```
 
 That's it. No CMake. No configure scripts. No dependency management.
-The output binary is in `build/whisker` (or `build/whisker.exe` on Windows).
+The output binary is in `out/whisker` (or `out/whisker.exe` on Windows).
 
 ```bash
 # Verify the binary was created
-ls -la build/
+ls -la out/
 # You should see: whisker (Linux/macOS) or whisker.exe (Windows)
 ```
 
@@ -139,7 +139,7 @@ The `config/` directory is included with sensible defaults. Just run:
 
 ```bash
 # Linux/macOS
-./build/whisker
+./out/whisker
 
 # Windows (from the Whisker folder)
 .\build\whisker.exe
@@ -167,20 +167,20 @@ To stop it, press `Ctrl+C` in the terminal.
 
 ```bash
 # Use a different config folder (maybe for a second server instance)
-./build/whisker -c /path/to/my/config
+./out/whisker -c /path/to/my/config
 
 # Example: run a test server with separate config
 cp -r config/ config-test/
 nano config-test/config.toml   # change the port to 27018
-./build/whisker -c ./config-test
+./out/whisker -c ./config-test
 ```
 
 ### CLI Options
 
 ```bash
-./build/whisker --help      # Show all options
-./build/whisker --version   # Show version
-./build/whisker -c ./config # Custom config directory (default: config)
+./out/whisker --help      # Show all options
+./out/whisker --version   # Show version
+./out/whisker -c ./config # Custom config directory (default: config)
 ```
 
 ### Running in the Background (Linux)
@@ -191,14 +191,14 @@ If you want the server to keep running after you close the terminal:
 # Simple way: use screen
 sudo apt install screen          # install screen if you don't have it
 screen -S whisker                # create a named screen session
-./build/whisker                  # start the server
+./out/whisker                  # start the server
 # Press Ctrl+A, then D to detach (server keeps running)
 screen -r whisker                # re-attach later to see output
 
 # Alternative: use tmux
 sudo apt install tmux
 tmux new -s whisker
-./build/whisker
+./out/whisker
 # Press Ctrl+B, then D to detach
 tmux attach -t whisker           # re-attach later
 
@@ -217,7 +217,7 @@ After=network.target
 Type=simple
 User=your_username
 WorkingDirectory=/home/your_username/Whisker
-ExecStart=/home/your_username/Whisker/build/whisker
+ExecStart=/home/your_username/Whisker/out/whisker
 Restart=on-failure
 RestartSec=5
 
@@ -369,7 +369,7 @@ See comments in `roles.toml` for the full permission bit breakdown.
 
 ### With AO2 Desktop Client
 
-1. Start Whisker: `./build/whisker`
+1. Start Whisker: `./out/whisker`
 2. Open the AO2 desktop client
 3. Go to **Favorites** or **Direct Connect**
 4. Enter: `localhost` port `27016`
@@ -378,7 +378,7 @@ See comments in `roles.toml` for the full permission bit breakdown.
 ### With webAO
 
 1. Make sure `enable_ws = true` in your config.toml
-2. Start Whisker: `./build/whisker`
+2. Start Whisker: `./out/whisker`
 3. Open this URL in your browser:
    ```
    https://web.aceattorneyonline.com/client.html?mode=join&connect=ws://localhost:27017
@@ -482,10 +482,10 @@ To save logs to a file:
 
 ```bash
 # Log to file AND terminal at the same time
-./build/whisker 2>&1 | tee whisker.log
+./out/whisker 2>&1 | tee whisker.log
 
 # Log to file only (background)
-./build/whisker > whisker.log 2>&1 &
+./out/whisker > whisker.log 2>&1 &
 
 # View a running log file
 tail -f whisker.log
@@ -513,16 +513,14 @@ nano src/my_plugin.c3
 c3c build
 
 # Check that the shared library was built
-ls build/
-# Linux: libmy_plugin.so
+ls out/
+# Linux: my_plugin.so
 # Windows: my_plugin.dll
-# macOS: libmy_plugin.dylib
 
 # Deploy: copy the library to Whisker's plugins directory
-cp build/libmy_plugin.so /path/to/whisker/plugins/
+cp out/my_plugin.so /path/to/whisker/plugins/
 
-# Restart Whisker to load the plugin
-# (hot-reload is not supported yet — you need to restart)
+# Restart Whisker to load the plugin (or use the `reload` console command)
 ```
 
 See the [Plugin Dev Guide](../plugins/PLUGIN%20DEV%20GUIDE%20README.md) for 9 complete copy-paste plugin examples including a
@@ -599,10 +597,10 @@ Magic 8-Ball, profanity filter, AFK detector, and more.
 **Permission denied when running**
 ```bash
 # Make the binary executable (Linux/macOS)
-chmod +x build/whisker
+chmod +x out/whisker
 
 # Then run
-./build/whisker
+./out/whisker
 ```
 
 ## Useful Linux Commands Reference
@@ -611,7 +609,7 @@ Quick reference for commands you'll use often when running Whisker:
 
 ```bash
 # --- Process management ---
-./build/whisker &              # Run in background
+./out/whisker &              # Run in background
 jobs                           # List background jobs
 fg                             # Bring back to foreground
 kill %1                        # Kill background job #1
@@ -629,7 +627,7 @@ curl ifconfig.me               # Find your public IP
 ping your-domain.com           # Test DNS resolution
 
 # --- Logs ---
-./build/whisker 2>&1 | tee server.log   # Log to file AND screen
+./out/whisker 2>&1 | tee server.log   # Log to file AND screen
 tail -f server.log                        # Watch log file live
 grep "ERROR" server.log                   # Search for errors
 grep "kicked" server.log                  # Search for moderation actions
