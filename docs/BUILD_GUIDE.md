@@ -142,7 +142,7 @@ The `config/` directory is included with sensible defaults. Just run:
 ./out/whisker
 
 # Windows (from the Whisker folder)
-.\build\whisker.exe
+.\out\whisker.exe
 ```
 
 You should see:
