@@ -177,6 +177,7 @@ fn void cmd_help_specific(server::Server* srv, client::Client* c, String cmd) {
 fn void cmd_about(client::Client* c) {
     c.send_server_message(string::tformat("=== %s v%s ===", config::SERVER_SOFTWARE, config::SERVER_VERSION));
     c.send_server_message("An AO2 server written in C3.");
+    c.send_server_message("Documentation, source code, issues and pull requests located here https://github.com/SyntaxNyah/Whisker");
     c.send_server_message("Protocol docs: OmniTroid (@omnitroid) & the AO dev team");
     c.send_server_message("https://github.com/AttorneyOnline");
     c.send_server_message("License: AGPL-3.0 | Extend with plugins, not forks!");
