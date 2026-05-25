@@ -81,14 +81,14 @@ extern fn CInt puts(ZString s);
 extern fn CInt system(ZString cmd);
 
 // Platform-specific sleep
-extern fn uint sleep_sec(uint seconds) @cname("sleep") @if(!env::WIN32);
+extern fn uint posix_sleep(uint seconds) @cname("sleep") @if(!env::WIN32);
 extern fn void win_sleep(uint milliseconds) @cname("Sleep") @if(env::WIN32);
 
 macro void sleep_sec(uint seconds) {
     $if env::WIN32:
         win_sleep(seconds * 1000);
     $else
-        sleep_sec(seconds);
+        posix_sleep(seconds);
     $endif
 }
 
