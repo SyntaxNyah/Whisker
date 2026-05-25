@@ -79,7 +79,18 @@ char[512] cfg_masterserver;
 // C functions used in the heartbeat thread to avoid C3 runtime TLS issues.
 extern fn CInt puts(ZString s);
 extern fn CInt system(ZString cmd);
-extern fn uint sleep_c(uint seconds) @cname("sleep");
+
+// Platform-specific sleep
+extern fn uint sleep_sec(uint seconds) @cname("sleep") @if(!env::WIN32);
+extern fn void win_sleep(uint milliseconds) @cname("Sleep") @if(env::WIN32);
+
+macro void sleep_sec(uint seconds) {
+    $if env::WIN32:
+        win_sleep(seconds * 1000);
+    $else
+        sleep_sec(seconds);
+    $endif
+}
 
 // C file I/O for config parsing.
 extern fn void* fopen_c(ZString path, ZString mode) @cname("fopen");
@@ -164,7 +175,7 @@ fn void whisker_plugin_shutdown() @export("whisker_plugin_shutdown") {
 // ============================================================
 
 fn int heartbeat_loop(void* arg) {
-    sleep_c(5);
+    sleep_sec(5);
 
     while (state.running) {
         CInt result = system((ZString)&curl_cmd_buf[0]);
@@ -173,7 +184,7 @@ fn int heartbeat_loop(void* arg) {
         } else {
             puts("[advertiser] WARNING: Failed to send heartbeat.");
         }
-        sleep_c(HEARTBEAT_INTERVAL);
+        sleep_sec(HEARTBEAT_INTERVAL);
     }
     return 0;
 }
