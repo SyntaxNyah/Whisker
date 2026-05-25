@@ -219,12 +219,19 @@ fn void? Server.run(&self) {
 
 fn void Server.handle_new_connection(&self, tcp::TcpSocket socket, bool is_websocket, String ip) {
 
+    // Ban check — reject banned IPs immediately before spawning a thread.
+    // This prevents banned clients from consuming a thread + 256KB pool.
+    String ipid = security::generate_ipid(ip);
+    if (self.ban_list.is_banned_ipid(ipid)) {
+        (void)socket.close();
+        return;
+    }
+
     // Connection rate limit check
     if (!self.ip_tracker.check_connection(ip)) {
-        io::printfn("[security] Connection rate limited: %s", security::generate_ipid(ip));
+        io::printfn("[security] Connection rate limited: %s", ipid);
 
         if (self.cfg.conn_flood_autoban && self.ip_tracker.should_autoban(ip)) {
-            String ipid = security::generate_ipid(ip);
             self.ban_list.add(ipid, "", "Connection flood (automatic)", config::DEFAULT_BAN_DURATION_SEC);
             io::printfn("[security] Auto-banned flooding IP: %s", ipid);
         }
@@ -234,11 +241,16 @@ fn void Server.handle_new_connection(&self, tcp::TcpSocket socket, bool is_webso
     }
 
     // Multiclient limit check
-    String ipid = security::generate_ipid(ip);
     int existing = count_clients_by_ipid(self, ipid);
     if (existing >= self.cfg.multiclient_limit) {
         io::printfn("[security] Multiclient limit reached for %s (%d/%d)",
             ipid, existing, self.cfg.multiclient_limit);
+        (void)socket.close();
+        return;
+    }
+
+    // Server full check — reject before spawning a thread + 256KB pool
+    if (self.client_count >= MAX_SERVER_CLIENTS) {
         (void)socket.close();
         return;
     }

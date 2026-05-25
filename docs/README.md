@@ -148,6 +148,7 @@ src/
 | [Plugin Dev Guide](../plugins/PLUGIN%20DEV%20GUIDE%20README.md) | Writing plugins with 9 copy-paste examples |
 | [Mod Guide](MOD_GUIDE.md) | Server administration, commands, permissions, bans |
 | [Development Guide](DEVELOPMENT%20GUIDE%20FOR%20C3%20DEVS.md) | C3 crash course, architecture deep-dive, code patterns |
+| [Security & DDoS](SECURITY.md) | Built-in protection layers, config tuning, infrastructure hardening |
 
 ## License
 

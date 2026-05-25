@@ -292,8 +292,10 @@ main() in main.c3
 
 ```
 handle_new_connection()
+  ├─ Ban check → reject banned IPs immediately (no thread spawned)
   ├─ Connection rate limit check → reject if flooding
   ├─ Multiclient limit check → reject if too many from same IP
+  ├─ Server full check → reject if MAX_SERVER_CLIENTS reached
   └─ Spawn client_handler_thread (detached)
 
 client_handler_thread()
