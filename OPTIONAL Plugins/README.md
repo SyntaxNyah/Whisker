@@ -129,22 +129,33 @@ The `.c3` source file is included as a learning exercise -- if you want to try c
 **Setup:**
 
 1. Grab the `.dll` or `.so` from the appropriate folder and drop it into your server's `plugins/` directory
-2. Add the following to your `config/config.toml`:
+2. Restart the server. That's it.
+
+The plugin automatically reads your `config/config.toml` to get the server name, description, TCP port, and WebSocket ports. It uses whatever you already have configured in `[server]` and `[websocket]`.
+
+**Optional:** To use a custom master server URL, add to your `config/config.toml`:
 
 ```toml
 [advertiser]
 masterserver = "https://servers.aceattorneyonline.com/servers"
 ```
 
-3. Make sure your `[server]` section has a proper `name` and `description` set -- these are what players see in the server browser.
-4. Restart the server.
+If omitted, it defaults to the official AO master server.
 
-The plugin will automatically advertise your server every 60 seconds. You'll see confirmation in the server console:
+The plugin advertises your server every 60 seconds. You'll see confirmation in the server console:
 
 ```
+[advertiser] Config loaded from config.toml.
 [advertiser] Advertising to: https://servers.aceattorneyonline.com/servers
-[advertiser] Server listed successfully.
+[advertiser] Server: My Server (TCP:27016 WS:27017 WSS:443)
+[advertiser] Heartbeat sent successfully.
 ```
+
+**What gets advertised:**
+- Server name and description from `[server]`
+- TCP port from `[server] port`
+- WS port from `[websocket] ws_port` (if `enable_ws = true`)
+- WSS port from `[websocket] wss_port` (if `enable_wss = true`, takes priority over WS)
 
 **Why is this a plugin and not built-in?**
 

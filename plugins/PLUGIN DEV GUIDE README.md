@@ -556,6 +556,74 @@ fn bool on_music_change(void* c, void* pkt) {
 6. **Use the standalone pattern.** Define types locally so your plugin compiles independently.
 7. **License as AGPL-3.0.** Keep the ecosystem open.
 
+## Threading in Plugins
+
+If your plugin spawns threads (e.g., for background tasks like heartbeats), you **must not**
+use C3's temp allocator (`dstring::temp()`, `string::tformat()`, `@pool_init()`) in the
+thread function. Standalone plugins are loaded via `dlopen`/`LoadLibrary`, which gives the
+plugin its own copy of the C3 runtime. Thread-local storage (TLS) for the temp allocator
+doesn't work correctly across this boundary, causing segfaults.
+
+**The safe pattern:**
+
+1. **Do all string building on the main thread** (inside `whisker_plugin_init`), where C3's
+   temp allocator works normally.
+2. **Store results in static buffers** (`char[N]` arrays) that survive past `init`.
+3. **In the thread, use only C functions**: `system()`, `sleep()`, `puts()`, `printf()`.
+
+```c3
+// Static buffer — lives for the plugin's lifetime
+char[4096] my_command_buf;
+
+// C functions safe to call from any thread
+extern fn CInt puts(ZString s);
+extern fn CInt system(ZString cmd);
+extern fn uint sleep_c(uint seconds) @cname("sleep");
+
+fn bool whisker_plugin_init(PluginAPI* api) @export("whisker_plugin_init") {
+    // Build strings HERE (main thread — temp allocator works)
+    ZString cmd = string::tformat_zstr(`echo "hello %s"`, "world");
+
+    // Copy to static buffer
+    usz i = 0;
+    while (i < 4095 && cmd[i] != 0) { my_command_buf[i] = cmd[i]; i++; }
+    my_command_buf[i] = 0;
+
+    // Start thread
+    Thread t;
+    if (catch t.create(&my_thread, null)) return false;
+    t.detach();
+    return true;
+}
+
+fn int my_thread(void* arg) {
+    // ONLY use C functions here — no dstring::temp(), no string::tformat()
+    sleep_c(5);
+    while (true) {
+        system((ZString)&my_command_buf[0]);
+        sleep_c(60);
+    }
+    return 0;
+}
+```
+
+See `server_advertiser.c3` for a complete real-world example of this pattern.
+
+## Reading Config Files
+
+Plugins can read `config/config.toml` to get server settings. Since the plugin
+runs on the main thread during init, you can use C3's standard library there.
+For file I/O that avoids any runtime issues, use C functions directly:
+
+```c3
+extern fn void* fopen_c(ZString path, ZString mode) @cname("fopen");
+extern fn char* fgets_c(char* buf, CInt size, void* stream) @cname("fgets");
+extern fn CInt fclose_c(void* stream) @cname("fclose");
+```
+
+See `server_advertiser.c3` for a complete config parser that reads `[server]`,
+`[websocket]`, and custom `[advertiser]` sections from `config.toml`.
+
 ## Debugging
 
 - Whisker logs plugin loading at startup: `[plugins] X plugins loaded`
@@ -572,6 +640,7 @@ fn bool on_music_change(void* c, void* pkt) {
 # - "missing required exports" → your @export names don't match exactly
 # - "Failed to load" → wrong architecture, missing libc linkage, or bad file path
 # - "undefined symbol: atexit" → add "linked-libraries": ["c"] to project.json, or pass -l c on the command line
+# - "Segmentation fault" after plugins load → thread using C3 temp allocator (see Threading section above)
 # - Plugin silently not loading → check file extension (.so on Linux, .dll on Windows)
 
 # List what's in the plugins directory
