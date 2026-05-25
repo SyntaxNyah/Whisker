@@ -135,11 +135,17 @@ notepad project.json    # Windows
 
 ### First Run
 
+> ### **IMPORTANT: Always run the server from the Whisker root directory, NOT from `out/`!**
+>
+> Whisker resolves `config/`, `plugins/`, and other paths relative to your
+> **working directory**. If you `cd out && ./whisker`, the server won't find
+> your config, plugins, or other resources. **Always run from the project root.**
+
 The `config/` directory is included with sensible defaults. Just run:
 
 ```bash
-# Linux/macOS
-./out/whisker
+# Linux/macOS (from the Whisker folder)
+cd ~/Whisker && ./out/whisker
 
 # Windows (from the Whisker folder)
 .\out\whisker.exe

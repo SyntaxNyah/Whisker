@@ -157,9 +157,23 @@ c3c build --target windows-x64                    # Windows .dll from Linux
 Copy the `.so` or `.dll` file to the server's `plugins/` directory.
 Restart Whisker. Your plugin loads automatically.
 
-> **Note:** `plugins/` is relative to the working directory you run the server
-> from, not the binary location. Configurable via `[plugins] directory` in
-> `config.toml`.
+> ### **IMPORTANT: Run the server from the Whisker root directory, NOT from `out/`!**
+>
+> The `plugins/` folder is relative to your **working directory**, NOT the binary
+> location. If you `cd out && ./whisker`, the server looks for `out/plugins/`
+> which doesn't exist and **no plugins will load**.
+>
+> **Correct:**
+> ```bash
+> cd ~/Whisker && ./out/whisker
+> ```
+>
+> **Wrong:**
+> ```bash
+> cd ~/Whisker/out && ./whisker    # plugins/ won't be found!
+> ```
+>
+> Configurable via `[plugins] directory` in `config.toml`.
 
 ## Plugin API Reference
 

@@ -58,9 +58,23 @@ OPTIONAL Plugins/
 3. Edit `config/config.toml` if the plugin requires configuration (check the plugin's section below)
 4. Restart your server
 
-> **Where is `plugins/`?** It's relative to the directory you run the server from
-> (your working directory), NOT relative to the binary or config directory. If you
-> run `./out/whisker` from `~/Whisker/`, then `plugins/` means `~/Whisker/plugins/`.
+> ### **IMPORTANT: Run the server from the Whisker root directory, NOT from `out/`!**
+>
+> The `plugins/` folder is relative to the directory you run the server from
+> (your **working directory**), NOT relative to the binary location. If you
+> `cd out && ./whisker`, the server looks for `out/plugins/` which doesn't exist
+> and **no plugins will load**.
+>
+> **Correct:**
+> ```bash
+> cd ~/Whisker && ./out/whisker
+> ```
+>
+> **Wrong:**
+> ```bash
+> cd ~/Whisker/out && ./whisker    # plugins/ won't be found!
+> ```
+>
 > You can change this path in `config.toml` under `[plugins] directory = "plugins"`.
 
 **To remove a plugin:**
