@@ -1,0 +1,17 @@
+name: Test CI
+
+on: [push, pull_request]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+      - name: Setup C3
+        uses: c3lang/setup-c3c@v1
+      - name: Build
+        run: c3c build
+      - name: Test
+        run: c3c test
+
