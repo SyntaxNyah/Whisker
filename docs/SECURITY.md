@@ -148,7 +148,7 @@ For WebSocket (webAO) connections, Cloudflare provides full protection:
 3. Configure Whisker with `reverse_proxy_mode = true`
 4. Set `trusted_header = "CF-Connecting-IP"`
 
-See [WSS_SETUP.md](WSS_SETUP.md) for the full Cloudflare + nginx setup.
+See [WSS_SETUP.md](https://github.com/SyntaxNyah/Whisker/blob/main/docs/WSS_SETUP.md) for the full Cloudflare + nginx setup.
 
 > **Note:** Cloudflare only proxies HTTP/WebSocket traffic. Raw TCP (desktop
 > client on port 27016) goes direct. For TCP protection, use Cloudflare
