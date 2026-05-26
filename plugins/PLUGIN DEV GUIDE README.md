@@ -225,13 +225,18 @@ api.client_get_showname(c)               // Showname (String)
 api.client_is_mod(c)                     // Is authenticated mod? (bool)
 api.client_is_joined(c)                  // Has finished joining? (bool)
 api.client_set_position(c, "def")        // Set courtroom position
+api.client_get_ipid(c)                   // Hashed IP identifier (String)
 
 // Server/Area operations
 api.find_client(uid)                     // Find client by UID (void*)
 api.broadcast_area_msg(area_id, "text")  // OOC message to entire area
 api.broadcast_area_raw(area_id, "data")  // Raw packet to entire area
+api.broadcast_all_msg("text")            // OOC message to ALL players
+api.broadcast_all_raw("data")            // Raw packet to ALL players
 api.broadcast_arup(arup_type)            // Broadcast area update
 api.get_area_count()                     // Number of areas (int)
+api.get_player_count()                   // Total joined players (int)
+api.get_area_player_count(area_id)       // Players in an area (int)
 api.force_move(c, new_area_id)           // Move client to area
 
 // CM (Case Manager) operations
@@ -241,10 +246,24 @@ api.area_remove_cm(area_id, uid)         // Remove UID from CM
 api.area_cm_count(area_id)               // Number of CMs (int)
 api.area_clear_cms(area_id)              // Remove all CMs
 api.area_uninvite(area_id, uid)          // Remove from invite list
+api.area_invite(area_id, uid)            // Add to invite list
 api.area_set_status(area_id, status)     // Set area status
 api.area_get_status(area_id)             // Get area status (int)
 api.area_get_name(area_id)               // Get area name (String)
 api.area_set_song(area_id, song, uid)    // Set playing song
+api.area_get_background(area_id)         // Get background name (String)
+api.area_set_background(area_id, "bg")   // Set background (broadcasts BN)
+api.area_get_lock(area_id)               // Get lock state (int: 0=FREE, 1=SPECTATABLE, 2=LOCKED)
+api.area_set_lock(area_id, lock_state)   // Set lock state (broadcasts ARUP)
+
+// Packet field access (for hooks)
+api.packet_get_field_count(pkt)          // Number of fields in packet (int)
+api.packet_get_field(pkt, 0)             // Get field by index (String)
+
+// Moderation
+api.client_kick(c)                       // Disconnect a player
+api.client_mute(c)                       // Mute IC chat
+api.client_unmute(c)                     // Unmute IC chat
 ```
 
 ## Example Plugins
@@ -307,6 +326,22 @@ struct PluginAPI {
     fn String(void*)   client_get_char_name;
     fn bool(void*)     client_is_joined;
     fn void(void*, String) client_set_position;
+    // Extended API (v2)
+    fn void(String)    broadcast_all_msg;
+    fn void(String)    broadcast_all_raw;
+    fn int()           get_player_count;
+    fn int(int)        get_area_player_count;
+    fn String(void*)   client_get_ipid;
+    fn String(void*, int) packet_get_field;
+    fn int(void*)      packet_get_field_count;
+    fn void(void*)     client_kick;
+    fn void(void*)     client_mute;
+    fn void(void*)     client_unmute;
+    fn String(int)     area_get_background;
+    fn void(int, String) area_set_background;
+    fn int(int)        area_get_lock;
+    fn void(int, int)  area_set_lock;
+    fn void(int, int)  area_invite;
 }
 
 PluginAPI* api;
@@ -410,6 +445,22 @@ struct PluginAPI {
     fn String(void*)   client_get_char_name;
     fn bool(void*)     client_is_joined;
     fn void(void*, String) client_set_position;
+    // Extended API (v2)
+    fn void(String)    broadcast_all_msg;
+    fn void(String)    broadcast_all_raw;
+    fn int()           get_player_count;
+    fn int(int)        get_area_player_count;
+    fn String(void*)   client_get_ipid;
+    fn String(void*, int) packet_get_field;
+    fn int(void*)      packet_get_field_count;
+    fn void(void*)     client_kick;
+    fn void(void*)     client_mute;
+    fn void(void*)     client_unmute;
+    fn String(int)     area_get_background;
+    fn void(int, String) area_set_background;
+    fn int(int)        area_get_lock;
+    fn void(int, int)  area_set_lock;
+    fn void(int, int)  area_invite;
 }
 
 PluginAPI* api;

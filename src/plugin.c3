@@ -135,6 +135,40 @@ alias ApiClientGetCharNameFn = fn String(void* client);
 alias ApiClientIsJoinedFn    = fn bool(void* client);
 alias ApiClientSetPositionFn = fn void(void* client, String pos);
 
+// -- Extended API (v2) --
+// New fields appended at the end for backwards compatibility.
+// Existing plugins compiled against v1 still work — they just
+// don't see these fields.
+
+// Broadcasting to all players
+alias ApiBroadcastAllMsgFn   = fn void(String msg);
+alias ApiBroadcastAllRawFn   = fn void(String data);
+
+// Player counts
+alias ApiGetPlayerCountFn      = fn int();
+alias ApiGetAreaPlayerCountFn  = fn int(int area_id);
+
+// Client identity
+alias ApiClientGetIpidFn       = fn String(void* client);
+
+// Packet field access (for hooks)
+alias ApiPacketGetFieldFn      = fn String(void* packet, int index);
+alias ApiPacketGetFieldCountFn = fn int(void* packet);
+
+// Moderation from plugins
+alias ApiClientKickFn          = fn void(void* client);
+alias ApiClientMuteFn          = fn void(void* client);
+alias ApiClientUnmuteFn        = fn void(void* client);
+
+// Area background
+alias ApiAreaGetBackgroundFn   = fn String(int area_id);
+alias ApiAreaSetBackgroundFn   = fn void(int area_id, String bg);
+
+// Area lock
+alias ApiAreaGetLockFn         = fn int(int area_id);
+alias ApiAreaSetLockFn         = fn void(int area_id, int lock_state);
+alias ApiAreaInviteFn          = fn void(int area_id, int uid);
+
 // ============================================================
 // Plugin API — passed to plugins during init
 // ============================================================
@@ -181,6 +215,23 @@ struct PluginAPI {
     ApiClientGetCharNameFn client_get_char_name;
     ApiClientIsJoinedFn    client_is_joined;
     ApiClientSetPositionFn client_set_position;
+
+    // Extended API (v2) — appended for backwards compatibility
+    ApiBroadcastAllMsgFn     broadcast_all_msg;
+    ApiBroadcastAllRawFn     broadcast_all_raw;
+    ApiGetPlayerCountFn      get_player_count;
+    ApiGetAreaPlayerCountFn  get_area_player_count;
+    ApiClientGetIpidFn       client_get_ipid;
+    ApiPacketGetFieldFn      packet_get_field;
+    ApiPacketGetFieldCountFn packet_get_field_count;
+    ApiClientKickFn          client_kick;
+    ApiClientMuteFn          client_mute;
+    ApiClientUnmuteFn        client_unmute;
+    ApiAreaGetBackgroundFn   area_get_background;
+    ApiAreaSetBackgroundFn   area_set_background;
+    ApiAreaGetLockFn         area_get_lock;
+    ApiAreaSetLockFn         area_set_lock;
+    ApiAreaInviteFn          area_invite;
 }
 
 // ============================================================

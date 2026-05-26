@@ -831,6 +831,81 @@ fn void _api_client_set_position(void* c, String pos) {
     ((client::Client*)c).position = pos;
 }
 
+// -- Extended API (v2) --
+
+fn void _api_broadcast_all_msg(String msg) {
+    broadcast(_plugin_srv,
+        protocol::build("CT", { config::SERVER_SOFTWARE, msg, "1" }));
+}
+
+fn void _api_broadcast_all_raw(String data) {
+    broadcast(_plugin_srv, data);
+}
+
+fn int _api_get_player_count() {
+    return _plugin_srv.client_count;
+}
+
+fn int _api_get_area_player_count(int area_id) {
+    if (area_id < 0 || area_id >= _plugin_srv.area_count) return 0;
+    return _plugin_srv.areas[area_id].player_count;
+}
+
+fn String _api_client_get_ipid(void* c) {
+    return ((client::Client*)c).ipid;
+}
+
+fn String _api_packet_get_field(void* pkt, int index) {
+    protocol::Packet* p = (protocol::Packet*)pkt;
+    if (index < 0 || index >= (int)p.field_count) return "";
+    return p.fields[index];
+}
+
+fn int _api_packet_get_field_count(void* pkt) {
+    return (int)((protocol::Packet*)pkt).field_count;
+}
+
+fn void _api_client_kick(void* c) {
+    client::Client* target = (client::Client*)c;
+    target.send_raw(protocol::build("KK", { "Kicked by plugin." }));
+    target.connected = false;
+}
+
+fn void _api_client_mute(void* c) {
+    ((client::Client*)c).is_muted = true;
+}
+
+fn void _api_client_unmute(void* c) {
+    ((client::Client*)c).is_muted = false;
+}
+
+fn String _api_area_get_background(int area_id) {
+    if (area_id < 0 || area_id >= _plugin_srv.area_count) return "";
+    return _plugin_srv.areas[area_id].background;
+}
+
+fn void _api_area_set_background(int area_id, String bg) {
+    if (area_id < 0 || area_id >= _plugin_srv.area_count) return;
+    _plugin_srv.areas[area_id].background = bg;
+    broadcast_area(_plugin_srv, area_id, protocol::build("BN", { bg }));
+}
+
+fn int _api_area_get_lock(int area_id) {
+    if (area_id < 0 || area_id >= _plugin_srv.area_count) return 0;
+    return (int)_plugin_srv.areas[area_id].lock;
+}
+
+fn void _api_area_set_lock(int area_id, int lock_state) {
+    if (area_id < 0 || area_id >= _plugin_srv.area_count) return;
+    _plugin_srv.areas[area_id].lock = (area::LockState)lock_state;
+    broadcast_arup(_plugin_srv, config::ARUP_LOCK);
+}
+
+fn void _api_area_invite(int area_id, int uid) {
+    if (area_id < 0 || area_id >= _plugin_srv.area_count) return;
+    _plugin_srv.areas[area_id].invite(uid);
+}
+
 // ============================================================
 // Build the fully populated PluginAPI
 // ============================================================
@@ -868,5 +943,22 @@ fn plugin::PluginAPI build_plugin_api(Server* srv) {
         .client_get_char_name = &_api_client_get_char_name,
         .client_is_joined    = &_api_client_is_joined,
         .client_set_position = &_api_client_set_position,
+
+        // Extended API (v2)
+        .broadcast_all_msg     = &_api_broadcast_all_msg,
+        .broadcast_all_raw     = &_api_broadcast_all_raw,
+        .get_player_count      = &_api_get_player_count,
+        .get_area_player_count = &_api_get_area_player_count,
+        .client_get_ipid       = &_api_client_get_ipid,
+        .packet_get_field      = &_api_packet_get_field,
+        .packet_get_field_count = &_api_packet_get_field_count,
+        .client_kick           = &_api_client_kick,
+        .client_mute           = &_api_client_mute,
+        .client_unmute         = &_api_client_unmute,
+        .area_get_background   = &_api_area_get_background,
+        .area_set_background   = &_api_area_set_background,
+        .area_get_lock         = &_api_area_get_lock,
+        .area_set_lock         = &_api_area_set_lock,
+        .area_invite           = &_api_area_invite,
     };
 }

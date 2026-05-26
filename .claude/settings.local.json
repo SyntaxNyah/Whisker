@@ -8,7 +8,15 @@
       "Bash(curl -s https://api.github.com/search/code?q=SearchResult+repo:c3lang/c3c+path:lib/std -H 'Accept: application/vnd.github.v3+json')",
       "Bash(python3 -c \"import sys,json; data=json.load\\(sys.stdin\\); [print\\(item[''''path'''']\\) for item in data.get\\(''''items'''',[]\\)]\")",
       "Bash(gh search:*)",
-      "Bash(find /c/Users/arbok/Documents/GitHub/Whisker -name *plugin* -type f)"
+      "Bash(find /c/Users/arbok/Documents/GitHub/Whisker -name *plugin* -type f)",
+      "Bash(c3c build:*)",
+      "Bash(where c3c:*)",
+      "Read(//c/c3c/**)",
+      "Read(//c//**)",
+      "Bash(cmd.exe /c \"where c3c\" 2>&1)",
+      "Bash(ls \"C:/Program Files/c3c\"/*.exe)",
+      "Read(//c/Users/arbok/Documents/GitHub/Whisker/$HOME/c3c/**)",
+      "Read(//c/Users/arbok/Documents/GitHub/Whisker/$HOME/Downloads/c3c/**)"
     ]
   }
 }

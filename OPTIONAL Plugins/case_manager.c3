@@ -89,6 +89,23 @@ alias ClientGetCharNameFn = fn String(void*);
 alias ClientIsJoinedFn    = fn bool(void*);
 alias ClientSetPositionFn = fn void(void*, String);
 
+// Extended API (v2) function pointer types
+alias BroadcastAllMsgFn    = fn void(String);
+alias BroadcastAllRawFn    = fn void(String);
+alias GetPlayerCountFn     = fn int();
+alias GetAreaPlayerCountFn = fn int(int);
+alias ClientGetIpidFn      = fn String(void*);
+alias PacketGetFieldFn     = fn String(void*, int);
+alias PacketGetFieldCountFn = fn int(void*);
+alias ClientKickFn         = fn void(void*);
+alias ClientMuteFn         = fn void(void*);
+alias ClientUnmuteFn       = fn void(void*);
+alias AreaGetBackgroundFn  = fn String(int);
+alias AreaSetBackgroundFn  = fn void(int, String);
+alias AreaGetLockFn        = fn int(int);
+alias AreaSetLockFn        = fn void(int, int);
+alias AreaInviteFn         = fn void(int, int);
+
 struct PluginAPI {
     // Registration
     RegisterCommandFn   register_command;
@@ -126,6 +143,23 @@ struct PluginAPI {
     ClientGetCharNameFn client_get_char_name;
     ClientIsJoinedFn    client_is_joined;
     ClientSetPositionFn client_set_position;
+
+    // Extended API (v2)
+    BroadcastAllMsgFn     broadcast_all_msg;
+    BroadcastAllRawFn     broadcast_all_raw;
+    GetPlayerCountFn      get_player_count;
+    GetAreaPlayerCountFn  get_area_player_count;
+    ClientGetIpidFn       client_get_ipid;
+    PacketGetFieldFn      packet_get_field;
+    PacketGetFieldCountFn packet_get_field_count;
+    ClientKickFn          client_kick;
+    ClientMuteFn          client_mute;
+    ClientUnmuteFn        client_unmute;
+    AreaGetBackgroundFn   area_get_background;
+    AreaSetBackgroundFn   area_set_background;
+    AreaGetLockFn         area_get_lock;
+    AreaSetLockFn         area_set_lock;
+    AreaInviteFn          area_invite;
 }
 
 // ============================================================
