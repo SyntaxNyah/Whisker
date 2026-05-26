@@ -152,7 +152,7 @@ src/
 | [Build Guide](BUILD_GUIDE.md) | Installing C3, building, running, config, testing |
 | [WSS Setup Guide](WSS_SETUP.md) | Cloudflare Tunnel, nginx + Let's Encrypt, Direct TLS |
 | [AO2 Protocol Reference](AO2_PROTOCOL.md) | Every packet documented, wire format, handshake, security |
-| [Plugin Dev Guide](../plugins/PLUGIN%20DEV%20GUIDE%20README.md) | Writing plugins with 9 copy-paste examples |
+| [Plugin Dev Guide](../plugins/PLUGIN%20DEV%20GUIDE%20README.md) | Writing plugins with 9 copy-paste examples (incl. v2 API) |
 | [Mod Guide](MOD_GUIDE.md) | Server administration, commands, permissions, bans |
 | [Development Guide](DEVELOPMENT%20GUIDE%20FOR%20C3%20DEVS.md) | C3 crash course, architecture deep-dive, code patterns |
 | [Security & DDoS](SECURITY.md) | Built-in protection layers, config tuning, infrastructure hardening |

@@ -276,7 +276,11 @@ same pattern used by the production plugins in `OPTIONAL Plugins/`.
 definition in `plugin.c3`. For production plugins, copy the full struct from
 `case_manager.c3` — it has every field correctly defined. Examples 1 and 2
 include the full struct so they are self-contained and copy-paste-ready.
-Examples 3–5 omit it for brevity — copy it from Example 1.
+Examples 3–9 omit it for brevity — copy it from Example 1.
+
+Examples 1–5 cover core concepts (commands, hooks, permissions, logging).
+Examples 6–9 showcase the v2 extended API (moderation, area management,
+packet inspection, player counting).
 
 ---
 
@@ -479,8 +483,10 @@ fn void whisker_plugin_shutdown() @export("whisker_plugin_shutdown") {}
 fn bool on_player_ready(void* c, void* pkt) {
     // We return false so the normal RD handler still processes
     // (allocates UID, sends DONE, etc.) — our message adds on top.
+    int players = api.get_player_count();  // v2: show how many are online
     api.client_send_msg(c, "=============================");
     api.client_send_msg(c, "Welcome to the server!");
+    api.client_send_msg(c, string::tformat("There are %d player(s) online.", players));
     api.client_send_msg(c, "Type /help for commands.");
     api.client_send_msg(c, "Type /rules to see server rules.");
     api.client_send_msg(c, "=============================");
@@ -600,10 +606,14 @@ fn bool on_join(void* c, void* pkt) {
 
 ---
 
-### Example 5: Music Logger (packet hook, logging only)
+### Example 5: Music Logger (packet hook with field access)
 
-Logs every music change to the server console. Doesn't block anything —
-purely observational. Shows how a hook can monitor without interfering.
+Logs every music change to the server console **with the actual song name**.
+Uses `packet_get_field()` (v2) to read the song from the MC packet. Before
+v2, hooks couldn't inspect packet contents — this was one of the biggest gaps.
+
+MC packet format: `MC#song_name#char_id#showname#looping#channel#effects#%`
+Field 0 is the song name, field 1 is the character ID.
 
 ```c3
 // file: music_logger.c3
@@ -617,7 +627,7 @@ struct PluginInfo { String name; String version; String author; String descripti
 PluginAPI* api;
 
 fn PluginInfo whisker_plugin_info() @export("whisker_plugin_info") {
-    return { "Music Logger", "1.0.0", "Whisker Community", "Logs music changes to console" };
+    return { "Music Logger", "1.0.0", "Whisker Community", "Logs music changes with song names" };
 }
 
 fn void whisker_plugin_init(PluginAPI* a) @export("whisker_plugin_init") {
@@ -628,9 +638,436 @@ fn void whisker_plugin_init(PluginAPI* a) @export("whisker_plugin_init") {
 fn void whisker_plugin_shutdown() @export("whisker_plugin_shutdown") {}
 
 fn bool on_music_change(void* c, void* pkt) {
-    io::printfn("[music-log] %s (UID %d) changed music.",
-        api.client_display_name(c), api.client_get_uid(c));
+    // v2: read the actual song name from the packet
+    String song = api.packet_get_field(pkt, 0);
+    int area = api.client_get_area(c);
+
+    io::printfn("[music-log] %s (UID %d) played \"%s\" in %s",
+        api.client_display_name(c), api.client_get_uid(c),
+        song, api.area_get_name(area));
     return false; // Always pass through — we're just logging
+}
+```
+
+---
+
+### Example 6: IC Spam Filter (v2 — moderation + packet inspection)
+
+Auto-mutes players who spam IC chat. Tracks message timestamps per UID
+and mutes anyone who sends more than 5 IC messages in 3 seconds. Mods
+with kick permission can use `/unmute <uid>` to reverse it.
+
+Uses v2 functions: `packet_get_field()`, `client_mute()`, `client_unmute()`,
+`client_get_ipid()`, `broadcast_all_msg()`.
+
+```c3
+// file: spam_filter.c3
+module spam_filter;
+
+import std::io;
+import std::time;
+
+struct PluginInfo { String name; String version; String author; String description; }
+// ... PluginAPI struct same as Example 1 (omitted for brevity) ...
+
+const int MAX_TRACKED  = 256;
+const int SPAM_LIMIT   = 5;     // messages within window = mute
+const long SPAM_WINDOW = 3;     // seconds
+
+const ulong PERM_KICK = 2;
+
+struct SpamTracker {
+    int uid;
+    int count;
+    long first_msg_time;
+}
+
+SpamTracker[MAX_TRACKED] trackers;
+PluginAPI* api;
+
+fn PluginInfo whisker_plugin_info() @export("whisker_plugin_info") {
+    return { "Spam Filter", "1.0.0", "Whisker Community", "Auto-mutes IC spammers" };
+}
+
+fn void whisker_plugin_init(PluginAPI* a) @export("whisker_plugin_init") {
+    api = a;
+    api.register_hook("MS", &on_ic_message, "Spam Filter");
+    api.register_command("unmute", &cmd_unmute, PERM_KICK, "Unmute a player", "Spam Filter");
+}
+
+fn void whisker_plugin_shutdown() @export("whisker_plugin_shutdown") {}
+
+fn SpamTracker* find_tracker(int uid) {
+    // Find existing or first empty slot
+    SpamTracker* empty = null;
+    for (int i = 0; i < MAX_TRACKED; i++) {
+        if (trackers[i].uid == uid) return &trackers[i];
+        if (empty == null && trackers[i].uid == 0) empty = &trackers[i];
+    }
+    if (empty != null) {
+        empty.uid = uid;
+        empty.count = 0;
+        empty.first_msg_time = 0;
+    }
+    return empty;
+}
+
+fn bool on_ic_message(void* c, void* pkt) {
+    int uid = api.client_get_uid(c);
+    long now = (long)time::clock::now().to_seconds();
+
+    SpamTracker* t = find_tracker(uid);
+    if (t == null) return false; // tracker table full, let it through
+
+    // Reset window if expired
+    if (now - t.first_msg_time > SPAM_WINDOW) {
+        t.count = 0;
+        t.first_msg_time = now;
+    }
+
+    t.count++;
+
+    if (t.count > SPAM_LIMIT) {
+        api.client_mute(c);
+        api.client_send_msg(c, "You have been auto-muted for spamming.");
+        io::printfn("[spam-filter] Auto-muted %s (UID %d, IPID %s)",
+            api.client_display_name(c), uid, api.client_get_ipid(c));
+        return true; // consume the spammy message
+    }
+
+    return false;
+}
+
+fn void cmd_unmute(void* c, String args) {
+    int target_uid = args.to_int() ?? -1;
+    if (target_uid < 0) {
+        api.client_send_msg(c, "Usage: /unmute <uid>");
+        return;
+    }
+    void* target = api.find_client(target_uid);
+    if (target == null) {
+        api.client_send_msg(c, "Player not found.");
+        return;
+    }
+    api.client_unmute(target);
+    api.client_send_msg(target, "You have been unmuted.");
+    api.client_send_msg(c, string::tformat("Unmuted UID %d.", target_uid));
+}
+```
+
+---
+
+### Example 7: Area Lockdown (v2 — area management + broadcasting)
+
+Adds `/lockdown` (lock current area, only invited players can enter)
+and `/open` (unlock it). Demonstrates area lock/unlock, invite management,
+and server-wide announcements.
+
+Uses v2 functions: `area_get_lock()`, `area_set_lock()`, `area_invite()`,
+`area_get_background()`, `broadcast_all_msg()`, `get_area_player_count()`.
+
+```c3
+// file: lockdown.c3
+module lockdown;
+
+import std::io;
+
+struct PluginInfo { String name; String version; String author; String description; }
+// ... PluginAPI struct same as Example 1 (omitted for brevity) ...
+
+const ulong PERM_MODIFY_AREA = 16;
+
+// Lock states (match area::LockState)
+const int LOCK_FREE        = 0;
+const int LOCK_SPECTATABLE = 1;
+const int LOCK_LOCKED      = 2;
+
+PluginAPI* api;
+
+fn PluginInfo whisker_plugin_info() @export("whisker_plugin_info") {
+    return { "Lockdown", "1.0.0", "Whisker Community", "Area lockdown commands" };
+}
+
+fn void whisker_plugin_init(PluginAPI* a) @export("whisker_plugin_init") {
+    api = a;
+    api.register_command("lockdown", &cmd_lockdown, PERM_MODIFY_AREA,
+        "Lock current area", "Lockdown");
+    api.register_command("open", &cmd_open, PERM_MODIFY_AREA,
+        "Unlock current area", "Lockdown");
+    api.register_command("areainvite", &cmd_invite, PERM_MODIFY_AREA,
+        "Invite a player to locked area", "Lockdown");
+    api.register_command("areastatus", &cmd_status, 0,
+        "Show area lock and player info", "Lockdown");
+}
+
+fn void whisker_plugin_shutdown() @export("whisker_plugin_shutdown") {}
+
+fn void cmd_lockdown(void* c, String args) {
+    int area = api.client_get_area(c);
+    int current_lock = api.area_get_lock(area);
+
+    if (current_lock == LOCK_LOCKED) {
+        api.client_send_msg(c, "This area is already locked.");
+        return;
+    }
+
+    api.area_set_lock(area, LOCK_LOCKED);
+    String area_name = api.area_get_name(area);
+    api.broadcast_area_msg(area, string::tformat(
+        "=== %s has been locked down by %s ===",
+        area_name, api.client_display_name(c)));
+    api.broadcast_all_msg(string::tformat(
+        "[Notice] %s is now locked.", area_name));
+
+    io::printfn("[lockdown] %s locked by %s",
+        area_name, api.client_display_name(c));
+}
+
+fn void cmd_open(void* c, String args) {
+    int area = api.client_get_area(c);
+    int current_lock = api.area_get_lock(area);
+
+    if (current_lock == LOCK_FREE) {
+        api.client_send_msg(c, "This area is already open.");
+        return;
+    }
+
+    api.area_set_lock(area, LOCK_FREE);
+    String area_name = api.area_get_name(area);
+    api.broadcast_area_msg(area, string::tformat(
+        "=== %s has been unlocked by %s ===",
+        area_name, api.client_display_name(c)));
+
+    io::printfn("[lockdown] %s unlocked by %s",
+        area_name, api.client_display_name(c));
+}
+
+fn void cmd_invite(void* c, String args) {
+    int target_uid = args.to_int() ?? -1;
+    if (target_uid < 0) {
+        api.client_send_msg(c, "Usage: /areainvite <uid>");
+        return;
+    }
+
+    int area = api.client_get_area(c);
+    api.area_invite(area, target_uid);
+
+    void* target = api.find_client(target_uid);
+    if (target != null) {
+        api.client_send_msg(target, string::tformat(
+            "You have been invited to %s.", api.area_get_name(area)));
+    }
+    api.client_send_msg(c, string::tformat("Invited UID %d.", target_uid));
+}
+
+fn void cmd_status(void* c, String args) {
+    int area = api.client_get_area(c);
+    String area_name = api.area_get_name(area);
+    String bg = api.area_get_background(area);
+    int lock = api.area_get_lock(area);
+    int players = api.get_area_player_count(area);
+
+    String lock_str = "FREE";
+    if (lock == LOCK_SPECTATABLE) lock_str = "SPECTATABLE";
+    if (lock == LOCK_LOCKED)      lock_str = "LOCKED";
+
+    api.client_send_msg(c, string::tformat("--- %s ---", area_name));
+    api.client_send_msg(c, string::tformat("Background: %s", bg));
+    api.client_send_msg(c, string::tformat("Lock: %s", lock_str));
+    api.client_send_msg(c, string::tformat("Players: %d", players));
+}
+```
+
+---
+
+### Example 8: Kick Vote (v2 — player counting + kick)
+
+Players vote to kick someone with `/votekick <uid>`. If a majority of the
+area votes, the target is kicked. Demonstrates `client_kick()`,
+`get_area_player_count()`, and `broadcast_area_msg()`.
+
+Uses v2 functions: `client_kick()`, `get_area_player_count()`,
+`broadcast_area_msg()`.
+
+```c3
+// file: votekick.c3
+module votekick;
+
+import std::io;
+
+struct PluginInfo { String name; String version; String author; String description; }
+// ... PluginAPI struct same as Example 1 (omitted for brevity) ...
+
+const int MAX_VOTES = 64;
+
+struct VoteSession {
+    int area_id;
+    int target_uid;
+    int[MAX_VOTES] voter_uids;  // UIDs who have voted
+    int vote_count;
+    bool active;
+}
+
+VoteSession current_vote;
+PluginAPI* api;
+
+fn PluginInfo whisker_plugin_info() @export("whisker_plugin_info") {
+    return { "Vote Kick", "1.0.0", "Whisker Community", "Democratic kick voting" };
+}
+
+fn void whisker_plugin_init(PluginAPI* a) @export("whisker_plugin_init") {
+    api = a;
+    api.register_command("votekick", &cmd_votekick, 0,
+        "Start or join a kick vote", "Vote Kick");
+}
+
+fn void whisker_plugin_shutdown() @export("whisker_plugin_shutdown") {}
+
+fn bool has_voted(int uid) {
+    for (int i = 0; i < current_vote.vote_count; i++) {
+        if (current_vote.voter_uids[i] == uid) return true;
+    }
+    return false;
+}
+
+fn void cmd_votekick(void* c, String args) {
+    int uid = api.client_get_uid(c);
+    int area = api.client_get_area(c);
+    int target_uid = args.to_int() ?? -1;
+
+    if (target_uid < 0) {
+        api.client_send_msg(c, "Usage: /votekick <uid>");
+        return;
+    }
+
+    if (target_uid == uid) {
+        api.client_send_msg(c, "You can't votekick yourself.");
+        return;
+    }
+
+    // Start new vote or join existing one
+    if (!current_vote.active || current_vote.target_uid != target_uid
+            || current_vote.area_id != area) {
+        // Start fresh vote
+        current_vote = {
+            .area_id = area,
+            .target_uid = target_uid,
+            .vote_count = 0,
+            .active = true,
+        };
+    }
+
+    if (has_voted(uid)) {
+        api.client_send_msg(c, "You already voted.");
+        return;
+    }
+
+    current_vote.voter_uids[current_vote.vote_count] = uid;
+    current_vote.vote_count++;
+
+    int area_players = api.get_area_player_count(area);
+    int needed = area_players / 2 + 1; // simple majority
+
+    api.broadcast_area_msg(area, string::tformat(
+        "[Vote Kick] %s voted to kick UID %d (%d/%d votes)",
+        api.client_display_name(c), target_uid,
+        current_vote.vote_count, needed));
+
+    if (current_vote.vote_count >= needed) {
+        void* target = api.find_client(target_uid);
+        if (target != null) {
+            api.client_send_msg(target, "You have been vote-kicked.");
+            api.client_kick(target);
+        }
+        api.broadcast_area_msg(area, string::tformat(
+            "[Vote Kick] UID %d has been kicked by vote.", target_uid));
+        current_vote.active = false;
+        io::printfn("[votekick] UID %d kicked from area %d by vote",
+            target_uid, area);
+    }
+}
+```
+
+---
+
+### Example 9: Background Scheduler (v2 — area backgrounds + hooks)
+
+Automatically changes the area background based on which song is playing.
+Maps song names to backgrounds — when someone plays a "courtroom" song,
+the background switches to match. Shows `packet_get_field()` combined
+with `area_set_background()`.
+
+Uses v2 functions: `packet_get_field()`, `area_set_background()`,
+`area_get_background()`.
+
+```c3
+// file: bg_scheduler.c3
+module bg_scheduler;
+
+import std::io;
+
+struct PluginInfo { String name; String version; String author; String description; }
+// ... PluginAPI struct same as Example 1 (omitted for brevity) ...
+
+const int MAX_MAPPINGS = 32;
+
+struct SongMapping {
+    String song_contains;   // substring to match in song name
+    String background;      // background to switch to
+}
+
+// Configure your song-to-background mappings here
+const SongMapping[] MAPPINGS = {
+    { "trial",        "gs4-courtroom" },
+    { "cross",        "gs4-courtroom" },
+    { "objection",    "gs4-courtroom" },
+    { "pursuit",      "gs4-courtroom" },
+    { "lobby",        "gs4-lobbyoffice" },
+    { "investigation","gs4-detention" },
+    { "detention",    "gs4-detention" },
+};
+
+PluginAPI* api;
+
+fn PluginInfo whisker_plugin_info() @export("whisker_plugin_info") {
+    return { "BG Scheduler", "1.0.0", "Whisker Community", "Auto-switches backgrounds with music" };
+}
+
+fn void whisker_plugin_init(PluginAPI* a) @export("whisker_plugin_init") {
+    api = a;
+    api.register_hook("MC", &on_music, "BG Scheduler");
+}
+
+fn void whisker_plugin_shutdown() @export("whisker_plugin_shutdown") {}
+
+fn bool on_music(void* c, void* pkt) {
+    String song = api.packet_get_field(pkt, 0);
+    int area = api.client_get_area(c);
+
+    // Check each mapping for a substring match
+    for (int i = 0; i < (int)MAPPINGS.len; i++) {
+        // Simple substring search
+        if (song.len >= MAPPINGS[i].song_contains.len) {
+            bool found = false;
+            for (usz j = 0; j <= song.len - MAPPINGS[i].song_contains.len; j++) {
+                if (song[j..j + MAPPINGS[i].song_contains.len - 1] == MAPPINGS[i].song_contains) {
+                    found = true;
+                    break;
+                }
+            }
+            if (found) {
+                String current_bg = api.area_get_background(area);
+                if (current_bg != MAPPINGS[i].background) {
+                    api.area_set_background(area, MAPPINGS[i].background);
+                    api.broadcast_area_msg(area, string::tformat(
+                        "[BG] Background changed to %s", MAPPINGS[i].background));
+                }
+                break;
+            }
+        }
+    }
+
+    return false; // let the music change through
 }
 ```
 
