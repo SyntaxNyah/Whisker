@@ -12,8 +12,11 @@ jobs:
         run: |
           curl -sL https://github.com/c3lang/c3c/releases/latest/download/c3-linux.tar.gz -o c3c.tar.gz
           tar xzf c3c.tar.gz
-          sudo cp $(find . -name c3c -type f -executable | head -1) /usr/local/bin/
-          c3c --version
+          C3_DIR=$(find . -maxdepth 1 -type d -name "c3*" | head -1)
+          echo "$PWD/$C3_DIR" >> $GITHUB_PATH
+          ls -la "$C3_DIR"
+      - name: Verify C3
+        run: c3c --version
       - name: Build
         run: c3c build
       - name: Test
