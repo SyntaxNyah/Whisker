@@ -69,8 +69,8 @@ Whisker handles ws/wss the same way as Nyathena and other AO servers:
 All three options extract the real client IP correctly.
 
 **Tip for webAO users:** If `web.aceattorneyonline.com` (hosted on GitHub Pages)
-blocks `ws://` connections due to mixed-content, try [webao.miku.pizza](https://webao.miku.pizza)
-— a fork by LemmyAO that handles the HTTP/HTTPS issue so your browser doesn't block
+blocks `ws://` connections due to mixed-content, try LemmyAO [webao.miku.pizza](https://webao.miku.pizza)
+— a fork by SyntaxNyah that handles the HTTP/HTTPS issue so your browser doesn't block
 the WebSocket connection.
 
 For detailed step-by-step setup instructions with commands, see the [WSS Setup Guide](docs/WSS_SETUP.md).
