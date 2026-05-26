@@ -866,6 +866,33 @@ The production plugins in `OPTIONAL Plugins/` (especially `case_manager.c3`)
 are always kept in sync with the server's struct. Copy the struct from there
 when in doubt.
 
+## What the Extended API (v2) Adds
+
+The original PluginAPI (31 functions) let plugins **listen and talk** — register
+commands, hook packets, send messages, and query basic client info. But there
+were significant gaps that made certain plugin categories impossible to build.
+
+The v2 extension (15 additional functions) fills those gaps:
+
+| Gap | Problem | v2 Solution |
+|-----|---------|-------------|
+| **Packet inspection** | Hooks received `void* packet` but couldn't read its fields — hooks could only react to *which* packet arrived, not *what it contained* | `packet_get_field(pkt, index)`, `packet_get_field_count(pkt)` |
+| **Moderation actions** | Plugins couldn't kick, mute, or unmute — no way to build auto-mod, spam filters, or custom moderation | `client_kick(c)`, `client_mute(c)`, `client_unmute(c)` |
+| **Server-wide broadcasts** | Could only broadcast to a single area, not the whole server — no global announcements | `broadcast_all_msg(msg)`, `broadcast_all_raw(data)` |
+| **Area manipulation** | Couldn't read or change backgrounds, lock/unlock areas, or manage invites — area-management plugins were impossible | `area_get_background()`, `area_set_background()`, `area_get_lock()`, `area_set_lock()`, `area_invite()` |
+| **Player counting** | No way to query how many players were online or in a specific area | `get_player_count()`, `get_area_player_count(area_id)` |
+| **Player identification** | Couldn't identify players across reconnects for ban-style logic | `client_get_ipid(c)` |
+
+**Backwards compatibility:** All 15 new fields are appended at the *end* of the
+`PluginAPI` struct. Old compiled plugins only know about the first 31 fields and
+never touch the new ones — they keep working without recompilation. New plugins
+can use all 46.
+
+**What this unlocks:** With the v2 API, you can now build auto-moderators,
+spam filters, area lockdown systems, player count monitors, welcome-back
+messages for returning players, packet rewriting hooks, and server-wide
+event systems — none of which were possible before.
+
 ## Hookable Packet Headers
 
 These are the AO2 packet headers the server processes. You can hook any

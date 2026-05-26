@@ -140,7 +140,7 @@ If `accounts.txt` is empty (no accounts configured), Whisker falls back to the l
 
 ### Extending the auth system
 
-The built-in account system is intentionally simple -- plain text passwords, file-based storage. If you need bcrypt/argon2 hashing, database-backed auth, OAuth, or any other advanced authentication, build it as a **plugin**. The Plugin API gives you full access to client operations, so a plugin can intercept `/login` and implement any auth flow you want.
+The built-in account system is intentionally simple -- plain text passwords, file-based storage. If you need bcrypt/argon2 hashing, database-backed auth, OAuth, or any other advanced authentication, build it as a **plugin**. The Plugin API gives you full access to client operations (messaging, kicking, muting, reading IPIDs), area management (locking, backgrounds, invites), packet interception (read any field from any packet), and server-wide broadcasting -- so a plugin can intercept `/login` and implement any auth flow you want.
 
 ---
 
@@ -533,9 +533,21 @@ When the server starts, it logs which plugins were loaded:
 [plugins] 3 plugins loaded
 ```
 
+### What plugins can do
+
+Plugins have access to a comprehensive API that lets them:
+
+- **Add commands** — register new `/commands` with permission requirements
+- **Hook packets** — intercept and read any AO2 packet before the server handles it
+- **Moderate** — kick, mute, and unmute players programmatically
+- **Broadcast** — send messages to a single area or the entire server
+- **Manage areas** — lock/unlock, change backgrounds, set status, invite players, force-move
+- **Read player info** — UID, IPID (for persistent tracking), character, area, mod status
+- **Query server state** — total player count, per-area player count, area count
+
 ### Writing your own plugins
 
-See the [Plugin Dev Guide](../plugins/PLUGIN%20DEV%20GUIDE%20README.md) for the full development guide with 9 copy-paste examples.
+See the [Plugin Dev Guide](../plugins/PLUGIN%20DEV%20GUIDE%20README.md) for the full development guide with copy-paste examples.
 
 For details on how packets work under the hood, see the [AO2 Protocol Reference](AO2_PROTOCOL.md).
 

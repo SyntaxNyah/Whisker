@@ -491,13 +491,17 @@ the full guide. Here's the short version:
 
 Plugins can:
 - Add new `/commands`
-- Intercept any packet before the default handler
-- Send messages to clients
-- Check client permissions
+- Intercept any packet before the default handler and read packet fields
+- Send messages to individual clients or broadcast to areas / the whole server
+- Kick, mute, and unmute players
+- Read client info (UID, area, character, IPID, mod status)
+- Manage areas (lock/unlock, set background, set status, invite, move players)
+- Query server state (player counts, area counts, area player counts)
 
 Plugins cannot:
 - Modify core server code
 - Access internal state not exposed through the API
+- Ban players (bans require IPID + HDID handling that lives in core)
 
 This is intentional. It keeps plugins stable across server updates.
 

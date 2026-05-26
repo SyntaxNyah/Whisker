@@ -45,7 +45,7 @@ Whisker is an Attorney Online 2 (AO2) server written in C3. It implements the fu
 
 1. **No magic numbers.** Every constant is named in `config.c3`. Grep for `const` to find them all.
 2. **Thread-per-client.** Simple model like Athena. Each connection gets its own handler thread with its own `@pool_init` memory pool. Client structs are created inside the handler's pool to prevent cross-pool memory corruption.
-3. **Plugins over forks.** The plugin system lets you add commands and packet hooks without modifying core code.
+3. **Plugins over forks.** The plugin system lets you add commands, packet hooks, moderation actions, area management, and server-wide broadcasts without modifying core code. The PluginAPI exposes 46 function pointers covering registration, client operations, area operations, broadcasting, packet field access, and moderation. The extended API (v2) adds 15 functions for packet inspection, moderation actions, server-wide broadcasts, area manipulation, player counting, and IPID access — all appended at the end of the struct for backwards compatibility with existing compiled plugins.
 4. **UID-based pairing.** Pairs survive character changes and area moves (inspired by Nyathena).
 5. **Multi-layer rate limiting.** Separate limits for IC messages, OOC, raw packets, and connections per IP.
 6. **Reverse proxy aware.** Extracts real IPs from X-Forwarded-For, X-Real-IP, CF-Connecting-IP headers.
@@ -97,6 +97,14 @@ Each plugin exports:
 - `whisker_plugin_info()` — name, version, author
 - `whisker_plugin_init(api)` — register commands and hooks
 - `whisker_plugin_shutdown()` — cleanup
+
+The PluginAPI (defined in `plugin.c3`, wrappers in `server.c3`) exposes:
+- **Registration**: commands, packet hooks
+- **Broadcasting**: per-area msg/raw, server-wide msg/raw, ARUP updates
+- **Client ops**: send messages, get UID/area/IPID/character info, kick, mute/unmute
+- **Area ops**: CM management, lock/unlock, invite, background, status, song, force-move
+- **Packet access**: read field count and individual fields from hooked packets
+- **Server info**: player count, area count, per-area player count
 
 See `plugins/README.md` for the full development guide.
 

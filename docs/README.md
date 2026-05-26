@@ -83,6 +83,13 @@ The plugin system is the answer to AO server fork fragmentation. Instead of
 forking the whole server to add features, write a plugin. Ship it separately.
 Everyone benefits.
 
+The Plugin API exposes 46 function pointers: commands, packet hooks with field
+access, client operations (messaging, kick, mute, IPID), area management
+(lock/unlock, backgrounds, invites, status), server-wide broadcasting, and
+player count queries. The extended API (v2) is backwards-compatible — old
+plugins keep working without recompilation. See the dev guide for the full
+reference.
+
 ## Protocol
 
 Whisker implements the AO2 protocol. For a complete, plain-English reference of every packet, the handshake sequence, wire format, and more, see the [AO2 Protocol Reference](AO2_PROTOCOL.md).
