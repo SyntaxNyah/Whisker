@@ -157,6 +157,10 @@ c3c build --target windows-x64                    # Windows .dll from Linux
 Copy the `.so` or `.dll` file to the server's `plugins/` directory.
 Restart Whisker. Your plugin loads automatically.
 
+> **Tip:** You don't need to restart the whole server every time. Use the
+> `/reload` console command to hot-reload all plugins — it unloads everything,
+> re-scans `plugins/`, and re-loads. Great for the build-deploy-test loop.
+
 > **Note:** The server automatically resolves the `plugins/` path relative to the
 > project root (same as `config/`), so it works whether you run from the project
 > root or from `out/`. Configurable via `[plugins] directory` in `config.toml`.
@@ -251,8 +255,9 @@ same pattern used by the production plugins in `OPTIONAL Plugins/`.
 
 **Important:** The `PluginAPI` struct layout must exactly match the server's
 definition in `plugin.c3`. For production plugins, copy the full struct from
-`case_manager.c3` — it has every field correctly defined. The examples below
+`case_manager.c3` — it has every field correctly defined. Examples 1 and 2
 include the full struct so they are self-contained and copy-paste-ready.
+Examples 3–5 omit it for brevity — copy it from Example 1.
 
 ---
 
@@ -310,9 +315,10 @@ fn PluginInfo whisker_plugin_info() @export("whisker_plugin_info") {
     return { "Rules", "1.0.0", "Whisker Community", "Displays server rules" };
 }
 
-fn void whisker_plugin_init(PluginAPI* a) @export("whisker_plugin_init") {
+fn bool whisker_plugin_init(PluginAPI* a) @export("whisker_plugin_init") {
     api = a;
     api.register_command("rules", &cmd_rules, 0, "Show server rules", "Rules");
+    return true;
 }
 
 fn void whisker_plugin_shutdown() @export("whisker_plugin_shutdown") {}
@@ -365,15 +371,46 @@ cp rules.dll /path/to/whisker/plugins/       # Windows
 Sends a custom welcome message when a player finishes joining. Hooks the
 `RD` packet (the last step of the join handshake).
 
-> The `PluginAPI` struct is the same as Example 1 — omitted for brevity.
-> Copy it from Example 1 or from `case_manager.c3`.
-
 ```c3
 // file: welcome.c3
 module welcome;
 
+// -- Standalone plugin types (must match server's plugin.c3) --
 struct PluginInfo { String name; String version; String author; String description; }
-// ... PluginAPI struct same as Example 1 (omitted for brevity) ...
+alias CommandHandler = fn void(void* client, String args);
+alias PacketHook     = fn bool(void* client, void* packet);
+
+struct PluginAPI {
+    fn void(String, CommandHandler, ulong, String, String) register_command;
+    fn void(String, PacketHook, String)                    register_hook;
+    fn void*(int)      find_client;
+    fn void(int, String) broadcast_area_msg;
+    fn void(int, String) broadcast_area_raw;
+    fn void(int)       broadcast_arup;
+    fn int()           get_area_count;
+    fn bool(int, int)  area_is_cm;
+    fn void(int, int)  area_add_cm;
+    fn void(int, int)  area_remove_cm;
+    fn int(int)        area_cm_count;
+    fn void(int)       area_clear_cms;
+    fn void(int, int)  area_uninvite;
+    fn void(int, int)  area_set_status;
+    fn int(int)        area_get_status;
+    fn String(int)     area_get_name;
+    fn void(int, String, int) area_set_song;
+    fn void(void*, int) force_move;
+    fn void(void*, String) client_send_msg;
+    fn void(void*, String) client_send_raw;
+    fn int(void*)      client_get_uid;
+    fn int(void*)      client_get_area;
+    fn bool(void*)     client_is_mod;
+    fn String(void*)   client_display_name;
+    fn int(void*)      client_get_char_id;
+    fn String(void*)   client_get_showname;
+    fn String(void*)   client_get_char_name;
+    fn bool(void*)     client_is_joined;
+    fn void(void*, String) client_set_position;
+}
 
 PluginAPI* api;
 
@@ -683,8 +720,9 @@ c3c build
 cp out/my_cool_plugin.so /path/to/whisker/plugins/   # Linux
 # or: cp out/my_cool_plugin.dll /path/to/whisker/plugins/   # Windows
 
-# 5. Restart Whisker to load it
-# (Ctrl+C the running server, then start it again)
+# 5. Reload or restart Whisker to load it
+# Option A: Type /reload in the server console (no restart needed!)
+# Option B: Ctrl+C the running server, then start it again:
 cd /path/to/whisker
 ./out/whisker
 
@@ -745,3 +783,120 @@ registers a command with the same name as a built-in, your plugin wins.
 Packet hooks run BEFORE the default handler. Multiple plugins can hook
 the same packet — they run in load order. If any hook returns `true`,
 later hooks and the default handler are skipped.
+
+### Limits
+
+The server enforces static limits on loaded plugins:
+
+| Limit | Value |
+|-------|-------|
+| Max plugins | 64 |
+| Max plugin commands | 256 |
+| Max plugin hooks | 256 |
+
+These are compile-time constants in `plugin.c3`. If you hit them, you've
+probably got too many plugins — but you can recompile the server with
+higher values if needed.
+
+## Version Compatibility
+
+Your `PluginAPI` struct layout **must exactly match** the server's definition
+in `plugin.c3`. If the server adds, removes, or reorders fields in `PluginAPI`,
+your plugin will read garbage from the wrong function pointer offsets — this
+usually manifests as a crash or silent corruption.
+
+**How to stay safe:**
+1. When updating the server, check if `PluginAPI` in `plugin.c3` has changed
+   (look at the git diff for that struct).
+2. If it changed, update your plugin's local `PluginAPI` copy to match.
+3. Rebuild and redeploy your plugin.
+
+The production plugins in `OPTIONAL Plugins/` (especially `case_manager.c3`)
+are always kept in sync with the server's struct. Copy the struct from there
+when in doubt.
+
+## Hookable Packet Headers
+
+These are the AO2 packet headers the server processes. You can hook any
+of them with `api.register_hook()`. Hooks on unrecognized headers will
+simply never fire.
+
+### Handshake packets (pre-join)
+
+| Header | Description | Notes |
+|--------|-------------|-------|
+| `HI` | Client sends hardware ID | First packet from client |
+| `ID` | Client sends software name/version | |
+| `askchaa` | Client requests character count | |
+| `RC` | Client requests character list | |
+| `RM` | Client requests music list | |
+| `RD` | Client signals ready to join | Last handshake step — hook this for welcome messages |
+
+### In-game packets (post-join)
+
+| Header | Description | Notes |
+|--------|-------------|-------|
+| `CC` | Character select | Player picks a character |
+| `MS` | IC (in-character) message | The main chat — most common hook target |
+| `CT` | OOC (out-of-character) message | Also triggers command dispatch |
+| `MC` | Music change / area move | Dual purpose: plays music or moves to area |
+| `CH` | Keepalive / check | Heartbeat from client |
+| `HP` | Health bar update | Prosecution/defense health bars |
+| `PE` | Add evidence | |
+| `EE` | Edit evidence | |
+| `DE` | Delete evidence | |
+| `RT` | Testimony recording toggle | WT/CE (witness testimony / cross examination) |
+| `ZZ` | Mod call | Player calls for moderator help |
+| `CASEA` | Case announcement | Player announces a case |
+
+**Example:** To log every IC message and every music change:
+```c3
+api.register_hook("MS", &on_ic_message, "My Plugin");
+api.register_hook("MC", &on_music_change, "My Plugin");
+```
+
+## Troubleshooting Flowchart
+
+Plugin not loading? Walk through this:
+
+```
+Plugin not loading?
+│
+├─ Is the file in the plugins/ directory?
+│  └─ No → Copy .so/.dll to plugins/
+│
+├─ Is the file extension correct?
+│  ├─ Linux: must be .so
+│  └─ Windows: must be .dll
+│
+├─ Does the server log "missing required exports"?
+│  └─ Yes → Check your @export names match exactly:
+│           whisker_plugin_info, whisker_plugin_init
+│
+├─ Does the server log "Failed to load"?
+│  ├─ "undefined symbol: atexit"
+│  │  └─ Add -l c or "linked-libraries": ["c"] (Linux only)
+│  ├─ Architecture mismatch
+│  │  └─ Build on the same platform as your server
+│  └─ Other dlopen/LoadLibrary error
+│     └─ Check the error message in parentheses
+│
+├─ Plugin loads but crashes (segfault)?
+│  ├─ After loading → PluginAPI struct layout mismatch
+│  │  └─ Copy struct from case_manager.c3 or plugin.c3
+│  └─ During command/hook → Thread using C3 temp allocator
+│     └─ See Threading section above
+│
+├─ Plugin loads but command doesn't work?
+│  ├─ Command not showing in /help
+│  │  └─ Check register_command() is called in init
+│  ├─ "No permission"
+│  │  └─ Check required_perms — use 0 for no restriction
+│  └─ Wrong behavior
+│     └─ Add io::printfn() debug prints, check server console
+│
+└─ Plugin silently not loading?
+   ├─ Check server startup output for [plugins] lines
+   ├─ Is there a file in plugins/? → ls -la plugins/
+   └─ File permissions? → chmod +r on Linux
+```
