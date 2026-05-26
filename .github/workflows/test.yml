@@ -9,7 +9,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v6
       - name: Setup C3
-        uses: c3lang/setup-c3c@v1
+        run: |
+          curl -sL https://github.com/c3lang/c3c/releases/latest/download/c3-linux.tar.gz -o c3c.tar.gz
+          tar xzf c3c.tar.gz
+          sudo cp c3c/c3c /usr/local/bin/
+          c3c --version
       - name: Build
         run: c3c build
       - name: Test
