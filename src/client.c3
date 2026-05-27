@@ -101,7 +101,7 @@ fn Client new_client(tcp::TcpSocket socket, String ip, bool is_websocket) {
         .pair_char_name  = "",
         .pair_emote      = "",
         .pair_flip       = "0",
-        .pair_offset     = "0",
+        .pair_offset     = "0&0",
 
         .is_authenticated = false,
         .permissions      = 0,

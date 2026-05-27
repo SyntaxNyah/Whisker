@@ -315,38 +315,54 @@ You can't send IC messages until you've picked a character.
 This is the big one — the most complex packet in the protocol. It carries everything about an IC message: the text, animations, effects, sound, and pairing info.
 
 ```
-MS#0#preemote#stance#emote#Hello world#def#0#-1#0#wit#Phoenix#Nick#0#sfx.wav#0#%
+MS#0#preemote#Phoenix#normal#Hello world#wit#sfx.wav#0#48#0#0#0#0#0#Nick#-1#0&0#0#0#0#...#%
 ```
+
+**Client -> Server fields:**
 
 | Field | Index | What it is | Limits |
 |-------|-------|------------|--------|
-| Message type | 0 | 0=normal, 1=objection, 2=hold it, 3=take that | |
+| Desk modifier | 0 | 0-5 (chat bubble style) | |
 | Pre-animation | 1 | Animation played before talking | |
-| Stance | 2 | Character stance/pose | |
-| Emote | 3 | Emote name or ID | |
+| Character | 2 | Character folder name | |
+| Emote | 3 | Emote/animation name | |
 | **Message text** | 4 | **The actual dialogue** | Max 256 chars |
-| Side | 5 | def/pro (ignored by server) | |
-| Screenshake | 6 | Shake intensity | |
-| Evidence ID | 7 | Attached evidence (-1 = none) | |
-| Flipped | 8 | 0=normal, 1=mirror image | |
-| Position | 9 | Stage position (wit, def, pro, jud, hld, hlp) | |
-| Character name | 10 | Internal character name | |
-| Showname | 11 | Display name above text | Max 30 chars |
-| Preamble | 12 | Text before message | |
-| SFX | 13 | Sound effect filename | |
-| Color | 14 | Text color code | |
-| Other char ID | 15 | **Paired character** (set by server) | |
-| Other name | 16 | **Paired char name** (set by server) | |
-| Other emote | 17 | **Paired char emote** (set by server) | |
+| Side | 5 | Position (wit, def, pro, jud, hld, hlp) | |
+| SFX | 6 | Sound effect filename | |
+| Emote modifier | 7 | Emote modifier flags | |
+| Character ID | 8 | Numeric character ID | |
+| SFX delay | 9 | Sound effect delay (ms) | |
+| Shout modifier | 10 | 0=none, 1=objection, 2=hold it, 3=take that, 4=custom | |
+| Evidence | 11 | Evidence ID (0 = none) | |
+| Flip | 12 | 0=normal, 1=mirror image | |
+| Realization | 13 | 0=off, 1=on (screen flash) | |
+| Text color | 14 | Text color code (0-8) | |
+| Showname | 15 | Display name above text | Max 30 chars |
+| Other char ID | 16 | Paired character (client sends -1) | |
+| Self offset | 17 | Horizontal offset as "x&y" | |
+| 18+ | | noninterrupting_pre, sfx_looping, screenshake, frames_shake, frames_realization, frames_sfx, additive, effect, blips | |
 
-**Fields 15-17 are injected by the server.** If you're paired with someone, the server fills in their character info so the client can render both characters side-by-side.
+**Server -> Client relay fields (server inserts 4 extra pairing fields):**
+
+| Field | Index | What it is |
+|-------|-------|------------|
+| 0-15 | | Same as client |
+| Other char ID | 16 | **Partner's character ID** (set by server, -1 if unpaired) |
+| Other name | 17 | **Partner's character folder name** (inserted by server) |
+| Other emote | 18 | **Partner's last emote** (inserted by server) |
+| Self offset | 19 | Sender's offset (forwarded from client field 17) |
+| Other offset | 20 | **Partner's offset** (inserted by server) |
+| Other flip | 21 | **Partner's flip state** (inserted by server) |
+| 22+ | | Remaining client fields (18+), shifted by 4 |
+
+**Fields 16-18 and 20-21 are filled by the server.** If you're paired with someone, the server inserts their character info so the client can render both characters side-by-side.
 
 **What happens when you send this:**
 1. Mute check — if you're muted, rejected
 2. Character check — must have picked a character first
 3. Rate limit — max 20 IC messages per 10 seconds
 4. Message length — truncated to 256 chars if longer
-5. Pairing — server looks up your pair partner and fills fields 15-17
+5. Pairing — server resolves your pair partner and inserts fields 17-18, 20-21
 6. Broadcast — sent to everyone in your area
 
 ---
@@ -727,7 +743,7 @@ Pairing lets two players appear side-by-side during IC messages (like Phoenix an
 1. Player A types `/pair 5` (where 5 is Player B's UID)
 2. Player B types `/pair 3` (where 3 is Player A's UID)
 3. Both have requested each other — pair is now active
-4. Their IC messages now include each other's character info in fields 15-17
+4. Their IC messages now include each other's character info in fields 16-21
 
 Both players must be in the same area for the pair to be active. Either player can `/unpair` to cancel.
 
@@ -742,11 +758,15 @@ A mod types `/forcepair 3 5` to force two players into a pair. This:
 
 When Player A sends an MS packet and is paired with Player B, the server:
 1. Looks up Player B's character info
-2. Sets field 15 to Player B's character ID
-3. Sets field 16 to Player B's character name
-4. Sets field 17 to Player B's last emote
+2. Replaces field 16 with Player B's character ID
+3. Inserts field 17: Player B's character folder name
+4. Inserts field 18: Player B's last emote
+5. Forwards field 19: Player A's self_offset (from client field 17)
+6. Inserts field 20: Player B's last offset
+7. Inserts field 21: Player B's last flip state
+8. Remaining client fields shift by 4 positions
 
-The client then renders both characters on screen.
+The client then renders both characters side-by-side using the pairing fields.
 
 ---
 

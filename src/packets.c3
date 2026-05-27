@@ -257,33 +257,81 @@ fn void handle_ms(server::Server* srv, client::Client* c, protocol::Packet* pkt)
     // Resolve pair partner (persistent UID-based pairing)
     client::Client* pair_partner = pairing::resolve_pair(c, &srv.clients, srv.client_count);
 
-    // Build the outgoing MS packet with all fields
-    // Server fills in pairing info (other_name, other_emote)
+    // Build the outgoing MS packet.
+    //
+    // The client sends fields in this order:
+    //   0:desk_mod  1:preanim  2:character  3:emote  4:message  5:side
+    //   6:sfx  7:emote_mod  8:char_id  9:sfx_delay  10:shout_mod
+    //   11:evidence  12:flip  13:realization  14:text_color  15:showname
+    //   16:other_charid  17:self_offset  18+:nonint_pre, sfx_loop, ...
+    //
+    // The server relays with 4 inserted fields for pairing:
+    //   0-15: same as client
+    //   16: other_charid  (server replaces with partner's char_id or -1)
+    //   17: other_name    (server inserts partner's char folder name)
+    //   18: other_emote   (server inserts partner's last emote)
+    //   19: self_offset   (forwarded from client field 17)
+    //   20: other_offset  (server inserts partner's last offset)
+    //   21: other_flip    (server inserts partner's last flip)
+    //   22+: remaining client fields (18+) shifted by 4
     DString out = dstring::temp();
     out.append_string("MS");
 
-    // Forward all client fields, injecting pair info at the right positions
-    for (usz i = 0; i < pkt.field_count; i++) {
+    // Forward fields 0-15 as-is (up to showname)
+    usz forward_limit = pkt.field_count < 16 ? pkt.field_count : 16;
+    for (usz i = 0; i < forward_limit; i++) {
         out.append_char('#');
-
-        // Field 15: other_charid — inject from pair
-        if (i == 15 && pair_partner != null) {
-            out.append_string(string::tformat("%d", pair_partner.char_id));
-            continue;
-        }
-
-        // After other_charid, server adds: other_name, other_emote
         out.append_string(protocol::escape_value(pkt.fields[i]));
     }
 
-    // If pair exists, append partner info fields
-    if (pair_partner != null && pkt.field_count >= 16) {
-        // other_name (folder name of paired character)
-        out.append_char('#');
+    // Field 16: other_charid — inject pair partner's char_id
+    out.append_char('#');
+    if (pair_partner != null) {
+        out.append_string(string::tformat("%d", pair_partner.char_id));
+    } else {
+        out.append_string("-1");
+    }
+
+    // Field 17 (inserted): other_name — partner's character folder name
+    out.append_char('#');
+    if (pair_partner != null) {
         out.append_string(protocol::escape_value(pair_partner.char_name));
-        // other_emote
-        out.append_char('#');
+    }
+
+    // Field 18 (inserted): other_emote — partner's last emote
+    out.append_char('#');
+    if (pair_partner != null) {
         out.append_string(protocol::escape_value(pair_partner.pair_emote));
+    }
+
+    // Field 19: self_offset — forwarded from client field 17
+    out.append_char('#');
+    if (pkt.field_count > 17) {
+        out.append_string(protocol::escape_value(pkt.fields[17]));
+    } else {
+        out.append_string("0&0");
+    }
+
+    // Field 20 (inserted): other_offset — partner's last offset
+    out.append_char('#');
+    if (pair_partner != null) {
+        out.append_string(protocol::escape_value(pair_partner.pair_offset));
+    } else {
+        out.append_string("0&0");
+    }
+
+    // Field 21 (inserted): other_flip — partner's last flip state
+    out.append_char('#');
+    if (pair_partner != null) {
+        out.append_string(protocol::escape_value(pair_partner.pair_flip));
+    } else {
+        out.append_string("0");
+    }
+
+    // Forward remaining client fields (18+) — these become 22+ in the relay
+    for (usz i = 18; i < pkt.field_count; i++) {
+        out.append_char('#');
+        out.append_string(protocol::escape_value(pkt.fields[i]));
     }
 
     out.append_string(config::PACKET_TERMINATOR);
@@ -291,9 +339,15 @@ fn void handle_ms(server::Server* srv, client::Client* c, protocol::Packet* pkt)
     // Broadcast to area
     server::broadcast_area(srv, c.area_id, out.str_view());
 
-    // Update pair info for next message
+    // Update sender's pair state for future partner lookups
     if (pkt.field_count > 3) {
-        c.pair_emote = pkt.fields[3]; // emote field
+        c.pair_emote = pkt.fields[3];
+    }
+    if (pkt.field_count > 12) {
+        c.pair_flip = pkt.fields[12];
+    }
+    if (pkt.field_count > 17) {
+        c.pair_offset = pkt.fields[17];
     }
 }
 

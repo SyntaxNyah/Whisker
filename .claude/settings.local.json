@@ -16,7 +16,8 @@
       "Bash(cmd.exe /c \"where c3c\" 2>&1)",
       "Bash(ls \"C:/Program Files/c3c\"/*.exe)",
       "Read(//c/Users/arbok/Documents/GitHub/Whisker/$HOME/c3c/**)",
-      "Read(//c/Users/arbok/Documents/GitHub/Whisker/$HOME/Downloads/c3c/**)"
+      "Read(//c/Users/arbok/Documents/GitHub/Whisker/$HOME/Downloads/c3c/**)",
+      "Bash(grep -E \"\\\\.\\(js|ts|py|java|cpp|c|go\\)$\")"
     ]
   }
 }
