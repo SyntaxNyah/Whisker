@@ -4,7 +4,7 @@ Reference types and parsing from the reworked webAO codebase. Use this as the au
 
 Credit: [OmniTroid](https://github.com/omnitroid) for providing the type definitions, parsing code, and field layout clarifications.
 
-Source: https://github.com/AttorneyOnline/webAO
+Source: @Omnitroid
 
 ---
 
