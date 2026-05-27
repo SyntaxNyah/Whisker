@@ -206,7 +206,7 @@ If running on EC2 or similar:
 
 ## What Whisker Does NOT Protect Against
 
-Honest Limmitations:
+Honest Limitations:
 
 | Attack | Why Whisker can't stop it | Mitigation |
 |--------|--------------------------|------------|
