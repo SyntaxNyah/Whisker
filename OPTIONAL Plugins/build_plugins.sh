@@ -11,7 +11,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PLUGINS=("case_manager" "server_advertiser")
+PLUGINS=("case_manager" "server_advertiser" "casing")
 
 build_native() {
     echo "=== Building plugins for current platform ==="

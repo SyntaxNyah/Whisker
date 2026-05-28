@@ -252,4 +252,98 @@ Not every server wants players to self-manage areas. Some servers prefer moderat
 
 ---
 
+### Casing
+
+**Compiled:** `Windows/casing.dll` · `Linux/casing.so`
+**Source:** `casing.c3`
+
+Adds Attorney Online 2 casing commands to Whisker — testimony recording/playback, case documents, notecards, case advertisements, WT/CE blocking, and a judge action log. Inspired by [Akashi](https://github.com/AttorneyOnline/akashi) and [Nyathena](https://github.com/SyntaxNyah/Nyathena)'s casing systems.
+
+The `.c3` source file is included as a learning exercise. It's a comprehensive example of a standalone plugin using the full Plugin API including hooks, packet field inspection, and server-wide broadcasts. See the [Plugin Dev Guide](../plugins/PLUGIN%20DEV%20GUIDE%20README.md) for how to set up a C3 project and build it.
+
+**What this plugin adds:**
+
+- **Testimony recording & cross-examination** — Record IC messages as testimony statements, then replay them during cross-examination with automatic navigation. Supports editing (add/update/delete) statements mid-cross-examination.
+- **Case documents** — A per-area text field for sharing case info, links, or notes.
+- **Notecards** — Players write hidden notecards that a CM can reveal all at once (great for verdict voting).
+- **Case advertisements** — `/need` broadcasts a server-wide message that your area needs players.
+- **WT/CE blocking** — Block specific players from using Witness Testimony / Cross Examination judge controls.
+- **Judge log** — View the last 10 WT/CE and penalty bar actions in the area.
+
+**Commands:**
+
+| Command | Usage | Permission | Description |
+|---------|-------|------------|-------------|
+| `/testify` | `/testify` | CM/mod | Start recording testimony. Clears old testimony, sends WT splash. |
+| `/examine` | `/examine` | Anyone | Begin cross-examination. Sends CE splash, plays first statement. |
+| `/pause` | `/pause` | CM/mod | Stop recording or playback. |
+| `/testimony` | `/testimony` | Anyone | View all recorded testimony statements. |
+| `/add` | `/add` | CM/mod | Next IC message inserts after the current statement (during CE). |
+| `/update` | `/update` | CM/mod | Next IC message replaces the current statement (during CE). |
+| `/delete` | `/delete` | CM/mod | Delete the current statement (during CE). |
+| `/doc` | `/doc [text]` | View: anyone, Set: CM/mod | Get or set the area's case document. |
+| `/cleardoc` | `/cleardoc` | CM/mod | Clear the case document. |
+| `/need` | `/need <message>` | CM/mod | Broadcast a case advertisement to the entire server. |
+| `/notecard` | `/notecard <text>` | Anyone | Write a hidden notecard. |
+| `/notecardreveal` | `/notecardreveal` | CM/mod | Reveal all notecards in the area, then clear them. |
+| `/notecardclear` | `/notecardclear` | Anyone | Clear your own notecard. |
+| `/blockwtce` | `/blockwtce <uid>` | CM/mod | Block a player from using WT/CE controls. |
+| `/unblockwtce` | `/unblockwtce <uid>` | CM/mod | Unblock a player from WT/CE controls. |
+| `/judgelog` | `/judgelog` | CM/mod | View the last 10 judge actions (WT/CE plays, HP changes). |
+
+**How testimony works:**
+
+1. A CM types `/testify` — the Witness Testimony splash plays, recording begins.
+2. Each IC message in the area is recorded as a testimony statement (up to 30).
+3. The CM types `/pause` to stop recording.
+4. Anyone types `/examine` — the Cross-Examination splash plays, the first statement replays.
+5. During cross-examination, each IC message advances to the next recorded statement.
+6. When the last statement is reached, it loops back to the first and re-sends the CE splash.
+7. CMs can edit the testimony mid-CE with `/add`, `/update`, and `/delete`.
+8. Testimony auto-pauses if all CMs leave the area (safety feature).
+
+**How notecards work:**
+
+1. Players type `/notecard <text>` to write a hidden notecard (one per player per area).
+2. A CM types `/notecardreveal` to reveal all notecards at once.
+3. After reveal, all notecards are cleared automatically.
+4. Use case: the judge asks for verdicts — each player writes their vote, then the judge reveals them simultaneously.
+
+**Setup:**
+
+1. Grab the `.dll` or `.so` from the appropriate folder and drop it into your server's `plugins/` directory.
+2. Restart the server. No configuration needed.
+
+All commands automatically appear in `/help`.
+
+**To remove it:**
+
+Delete the `.dll` / `.so` file from `plugins/` and restart.
+
+**Why is this a plugin and not built-in?**
+
+Not every AO2 server is a casing server. Roleplay servers, social servers, and general-purpose servers don't need testimony recording, notecards, or cross-examination commands. Making casing opt-in keeps the core server lightweight and avoids forcing 16 commands on servers that will never use them.
+
+**Design notes (for developers):**
+
+- All casing state (testimony, documents, notecards, blocks, logs) is stored in a per-area static array inside the plugin — the core server has no knowledge of it.
+- The testimony system hooks the MS (IC message) packet to intercept messages during recording and playback. During recording, messages pass through normally and are also stored. During playback, incoming messages are consumed and replaced with the stored statement.
+- Stored testimony statements are full outgoing-format MS packets with empty pairing fields, escaped for the AO2 wire format. This ensures faithful replay of character, emote, message, and effects.
+- The RT (WT/CE) hook enforces per-area WT/CE blocks and logs judge actions.
+- The HP (penalty bar) hook logs penalty bar changes to the judge log.
+- Auto-pause safety: if all CMs leave the area, the next IC message auto-pauses any active testimony to prevent stuck state.
+- The plugin communicates with the server entirely through the `PluginAPI` function pointers — no imports from the server source.
+
+**Limits:**
+
+| Limit | Value |
+|-------|-------|
+| Max tracked areas | 128 |
+| Max testimony statements | 30 per area |
+| Max notecards | 32 per area |
+| Max WT/CE blocks | 32 per area |
+| Judge log entries | 10 per area (ring buffer) |
+
+---
+
 See the [Plugin Dev Guide](../plugins/PLUGIN%20DEV%20GUIDE%20README.md) for writing your own plugins.

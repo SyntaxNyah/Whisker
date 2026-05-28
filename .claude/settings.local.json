@@ -17,7 +17,14 @@
       "Bash(ls \"C:/Program Files/c3c\"/*.exe)",
       "Read(//c/Users/arbok/Documents/GitHub/Whisker/$HOME/c3c/**)",
       "Read(//c/Users/arbok/Documents/GitHub/Whisker/$HOME/Downloads/c3c/**)",
-      "Bash(grep -E \"\\\\.\\(js|ts|py|java|cpp|c|go\\)$\")"
+      "Bash(grep -E \"\\\\.\\(js|ts|py|java|cpp|c|go\\)$\")",
+      "Bash(gh api:*)",
+      "Bash(ls /c/c3c*)",
+      "Read(//c/Users/arbok/Documents/GitHub/Whisker/$HOME/**)",
+      "Read(//c/Users/arbok/Documents/GitHub/Whisker/$LOCALAPPDATA/**)",
+      "Read(//c/Users/arbok/Documents/GitHub/Whisker/$PROGRAMFILES/**)",
+      "Bash(/c/c3c/c3/c3c.exe build:*)",
+      "Bash(/c/c3c/c3/c3c.exe dynamic-lib:*)"
     ]
   }
 }
