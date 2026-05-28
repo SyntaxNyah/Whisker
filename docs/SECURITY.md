@@ -220,7 +220,7 @@ Honest Limitations:
 
 ## Security Checklist
 
-For a production AO2 server:
+For a production AO2 server to better protect against DDoS attacks doing any of these steps will make your server more secure:
 
 - [ ] Cloudflare or equivalent in front of WebSocket port
 - [ ] iptables `connlimit` rules on both ports
