@@ -202,7 +202,7 @@ If running on EC2 or similar:
 - **AWS Shield**: Free basic DDoS protection for all EC2 instances
 - **AWS WAF**: Web Application Firewall for WebSocket traffic (optional)
 
-### OVH Cloud
+### OVH Cloud / Bare Metal VPS hosting provider
 
 - If you can't use Cloudflare or AWS, try searching for a VPS that has dedicated DDoS protection built in.
 - OVH is a proven choice that works well on AO. No configuration is required other than deciding which ports you want open
