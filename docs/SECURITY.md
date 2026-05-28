@@ -133,8 +133,8 @@ multiclient_limit = 3        # most players only need 1-2
 Whisker's built-in protection handles **application-level abuse** — spammy
 players, reconnect spam, packet floods from known IPs. But it cannot stop
 **volumetric DDoS attacks** (thousands of IPs flooding your network). No
-application server can. This is the same for every AO2 server (Athena,
-tsuserver, Nyathena).
+application server can. This is the same for every AO2 server (Athena, Nyathena,
+tsuserver, Akashi or KFO-Server).
 
 For real DDoS protection, you need infrastructure-level defenses:
 
