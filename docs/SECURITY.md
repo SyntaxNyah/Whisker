@@ -202,7 +202,12 @@ If running on EC2 or similar:
 - **AWS Shield**: Free basic DDoS protection for all EC2 instances
 - **AWS WAF**: Web Application Firewall for WebSocket traffic (optional)
 
----
+### OVH Cloud
+
+- If you can't use Cloudflare or AWS, try searching for a VPS that has dedicated DDoS protection built in.
+- OVH is a proven choice that works well on AO. No configuration is required other than deciding which ports you want open
+- OVH stops any AO user from crashing your server and is more than enough if you don't want to mess with cloudflare.
+- Most Minecraft servers use them for a reason. https://www.ovhcloud.com/en-gb/security/anti-ddos/
 
 ## What Whisker Does NOT Protect Against
 
@@ -231,7 +236,6 @@ For a production AO2 server to better protect against DDoS attacks doing any of 
 - [ ] Firewall blocks all ports except 27016, 27017, and SSH
 - [ ] Run Whisker as a non-root user
 - [ ] Keep C3 and OS packages updated
-- [ ] If you can't use Cloudflare try searching for a VPS that has dedicated DDoS protection built in with no input needed apart from configuring which ports you want open. OVH is a proven choice that works well on AO. OVH stops any AO user from crashing your server. Most Minecraft servers use them for a reason. https://www.ovhcloud.com/en-gb/security/anti-ddos/
 
 ---
 
