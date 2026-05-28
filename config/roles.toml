@@ -14,7 +14,7 @@
 
 [[role]]
 name = "moderator"
-permissions = 39  # MUTE + KICK + BAN + MOVE_USERS
+permissions = 15  # MUTE + KICK + BAN + MOVE_USERS
 
 [[role]]
 name = "admin"
@@ -23,3 +23,5 @@ permissions = 127  # All except SHADOW and DJ
 [[role]]
 name = "dj"
 permissions = 256  # DJ only
+
+# I'll fix this in a future committ dj should be inherited to mod and admin lol
