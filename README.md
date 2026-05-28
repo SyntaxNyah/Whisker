@@ -146,7 +146,7 @@ src/
 - **Ferris-AO** — [github.com/SyntaxNyah/Ferris-AO](https://github.com/SyntaxNyah/Ferris-AO)
   Privacy-first AO2 server in Rust. Inspired the transport abstraction, delta suppression for
   ARUP broadcasts, bounded backpressure design, and IP hashing approach.
-- **KFO-Server** (tsuserver3 fork) — [github.com/AttorneyOnline/KFO-Server](https://github.com/AttorneyOnline/KFO-Server)
+- **KFO-Server** (tsuserver3 fork) — [github.com/AttorneyOnline/KFO-Server](https://github.com/Crystalwarrior/KFO-Server)
   The original Python AO2 server ecosystem. Informed the area/evidence/testimony model.
 - **webAO** — [github.com/AttorneyOnline/webAO](https://github.com/AttorneyOnline/webAO)
   The web-based AO client. WebSocket compatibility requirements came from testing with webAO.
