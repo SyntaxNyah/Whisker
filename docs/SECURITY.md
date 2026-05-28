@@ -236,5 +236,5 @@ For a production AO2 server to better protect against DDoS attacks doing any of 
 ---
 
 *Whisker's security model is on par with or better than other AO2 servers
-(Athena, tsuserver, Nyathena, Akashi and KFO-Server). The real difference in DDoS
+(Athena, Nyathena, Akashi, tsuserver and KFO-Server). The real difference in DDoS
 resilience comes from your infrastructure setup, not the application.*
