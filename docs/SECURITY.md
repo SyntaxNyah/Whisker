@@ -233,7 +233,7 @@ For a production AO2 server to better protect against DDoS attacks doing any of 
 - [ ] `conn_flood_autoban = true` (default)
 - [ ] Reasonable `multiclient_limit` (3-5 for most servers)
 - [ ] Redirect logs to file for fail2ban monitoring
-- [ ] Firewall blocks all ports except 27016, 27017, and SSH
+- [ ] Firewall blocks all ports except 27016, 27017, WSS PORT and SSH
 - [ ] Run Whisker as a non-root user
 - [ ] Keep C3 and OS packages updated
 
