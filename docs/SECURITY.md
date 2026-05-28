@@ -227,7 +227,7 @@ Honest Limitations:
 
 For a production AO2 server to better protect against DDoS attacks doing any of these steps will make your server more secure:
 
-- [ ] Cloudflare or equivalent in front of WebSocket port
+- [ ] Cloudflare or equivalent Anti DDoS in front of WebSocket port
 - [ ] iptables `connlimit` rules on both ports
 - [ ] `reverse_proxy_mode = true` if behind a proxy
 - [ ] `conn_flood_autoban = true` (default)
