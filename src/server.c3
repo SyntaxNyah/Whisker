@@ -449,8 +449,8 @@ fn void client_handler(Server* server, client::Client* c) {
                 continue;
             }
 
-            io::printfn("[debug] Packet from %s: %s (fields: %d)",
-                c.ipid, pkt.header, (int)pkt.field_count);
+            //io::printfn("[debug] Packet from %s: %s (fields: %d)",
+               // c.ipid, pkt.header, (int)pkt.field_count);
 
             // Let plugins intercept first
             if (plugin::on_packet(&server.plugins, c, &pkt)) {
