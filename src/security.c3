@@ -285,27 +285,38 @@ fn long current_time_sec() {
     return (long)time::now().to_seconds();
 }
 
-// Parse a duration string like "3d", "1h", "30m", "60s" into seconds.
+// Parse a duration string into seconds. Accepts:
+//   - bare numbers ("3600")          → seconds
+//   - short units  ("30s" "5m" "3d") → s/m/h/d/w
+//   - long  units  ("3 days" "1 week" "2 hours") → matched by first letter
+//   - an optional space between the number and the unit
+// 0 (or an empty/zero string) means a permanent ban.
 fn long parse_duration(String s) {
-    if (s.len == 0) return 0;
+    String t = s.trim();
+    if (t.len == 0) return 0;
 
     long value = 0;
     usz i = 0;
-    while (i < s.len && s[i] >= '0' && s[i] <= '9') {
-        value = value * 10 + (long)(s[i] - '0');
+    while (i < t.len && t[i] >= '0' && t[i] <= '9') {
+        value = value * 10 + (long)(t[i] - '0');
         i++;
     }
 
-    if (i >= s.len) return value; // bare seconds
+    // Allow a space between the number and the unit ("3 days").
+    while (i < t.len && (t[i] == ' ' || t[i] == '\t')) i++;
 
-    char unit = s[i];
+    if (i >= t.len) return value; // bare number = seconds
+
+    // Match on the unit's first letter, case-insensitively. This covers the
+    // short forms (s/m/h/d/w) and the long forms (second/minute/hour/day/week).
+    char unit = t[i];
+    if (unit >= 'A' && unit <= 'Z') unit += 32;
     switch (unit) {
         case 's': return value;
         case 'm': return value * 60;
         case 'h': return value * 3600;
         case 'd': return value * 86400;
         case 'w': return value * 604800;
-        default: break;
+        default:  return value;
     }
-    return value;
 }

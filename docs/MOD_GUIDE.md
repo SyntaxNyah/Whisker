@@ -108,6 +108,10 @@ reload                                  # Reload plugins after dropping in a new
 status                                  # Check server state
 ```
 
+> Console arguments are split the same quote-aware way as in-game commands, so a
+> password (or any value) containing spaces can be wrapped in quotes:
+> `addmod Admin "my long passphrase" admin`.
+
 ---
 
 ## Account Management
@@ -267,26 +271,38 @@ Immediately disconnects the player. They can reconnect.
 ### Ban
 
 ```
-/ban <uid> [-d duration] [reason]
+/ban <uid> [reason] [duration]
 ```
 
 Bans the player by IP hash (IPID) and hardware ID (HDID). They cannot reconnect until the ban expires or is removed.
+
+Arguments are a list, not one blob of text — **wrap any multi-word reason or duration in quotes** so it stays a single argument:
+
+```
+/ban 12 "ban evading" "3 days"
+```
 
 **Duration format:**
 - `30s` = 30 seconds
 - `5m` = 5 minutes
 - `1h` = 1 hour
-- `3d` = 3 days (default)
+- `3d` = 3 days (the default if you omit the duration)
 - `1w` = 1 week
+- `3 days`, `1 week`, `2 hours` — long forms work too (quote them)
+- `0` = permanent
 
 **Examples:**
 
 ```
 /ban 5                          # Ban UID 5 for 3 days (default), no reason
 /ban 5 Spamming                 # Ban UID 5 for 3 days, reason: Spamming
-/ban 5 -d 1h Flooding chat      # Ban UID 5 for 1 hour, reason: Flooding chat
-/ban 5 -d 0 Permanent ban       # Ban UID 5 permanently
+/ban 5 "Flooding chat" 1h       # Ban UID 5 for 1 hour, reason: Flooding chat
+/ban 5 "Ban evading" 0          # Ban UID 5 permanently
 ```
+
+> The reason comes before the duration. A single bare word after the UID is
+> treated as the reason; add a quoted duration (or a bare `3d`/`1w`) as the
+> third argument to set the length.
 
 ### Unban
 
@@ -491,13 +507,13 @@ Default ban duration is 3 days. Change the default in `config.toml`:
 default_ban_duration = "3d"
 ```
 
-Or specify per-ban with the `-d` flag:
+Or specify it per-ban as the third argument (after the UID and reason):
 
 ```
-/ban <uid> -d 1w Reason here
+/ban <uid> "Reason here" 1w
 ```
 
-Use `-d 0` for permanent bans.
+Use `0` as the duration for permanent bans.
 
 ### Removing bans
 

@@ -11,6 +11,7 @@ import whisker::config;
 import whisker::client;
 import whisker::server;
 import whisker::commands;
+import whisker::args;
 import whisker::security;
 import whisker::pairing;
 import whisker::protocol;
@@ -248,11 +249,11 @@ fn int get_account_count() {
     return _account_count;
 }
 
-fn void cmd_login(server::Server* srv, client::Client* c, String args) {
+fn void cmd_login(server::Server* srv, client::Client* c, args::Args* argv) {
     // /login <username> <password>
-    if (try space = args.index_of_char(' ')) {
-        String username = args[0..space - 1];
-        String password = args[space + 1..].trim();
+    if (argv.count >= 2) {
+        String username = argv.get(0);
+        String password = argv.get(1);
 
         if (_account_count > 0) {
             // Account-based auth — check username + password against accounts
@@ -309,13 +310,13 @@ fn void cmd_logout(client::Client* c) {
 // Kick
 // ============================================================
 
-fn void cmd_kick(server::Server* srv, client::Client* c, String args) {
+fn void cmd_kick(server::Server* srv, client::Client* c, args::Args* argv) {
     if (!c.has_permission(commands::PERM_KICK)) {
         c.send_server_message("No permission.");
         return;
     }
 
-    int uid = args.to_int() ?? -1;
+    int uid = argv.get_int(0, -1);
     if (uid < 0) {
         c.send_server_message("Usage: /kick <uid>");
         return;
@@ -343,43 +344,33 @@ fn void cmd_kick(server::Server* srv, client::Client* c, String args) {
 // Ban
 // ============================================================
 
-fn void cmd_ban(server::Server* srv, client::Client* c, String args) {
+fn void cmd_ban(server::Server* srv, client::Client* c, args::Args* argv) {
     if (!c.has_permission(commands::PERM_BAN)) {
         c.send_server_message("No permission.");
         return;
     }
 
-    // Parse: /ban <uid> [-d duration] [reason]
-    int uid = -1;
-    long duration_sec = config::DEFAULT_BAN_DURATION_SEC;
-    String reason = "No reason given.";
-
-    String[] parts = args.tsplit(" ");
-    if (parts.len == 0) {
-        c.send_server_message("Usage: /ban <uid> [-d duration] [reason]");
+    // Positional: /ban <uid> [reason] [duration]
+    //   /ban 12
+    //   /ban 12 "ban evading"
+    //   /ban 12 "ban evading" "3 days"
+    // The argument list is already split and quote-grouped for us, so a
+    // multi-word reason or duration is a single token — no manual parsing.
+    if (argv.is_empty()) {
+        c.send_server_message("Usage: /ban <uid> [reason] [duration]");
         return;
     }
 
-    uid = parts[0].to_int() ?? -1;
+    int uid = argv.get_int(0, -1);
     if (uid < 0) {
         c.send_server_message("Invalid UID.");
         return;
     }
 
-    // Parse optional flags
-    usz i = 1;
-    DString reason_buf = dstring::temp();
-    while (i < parts.len) {
-        if (parts[i] == "-d" && i + 1 < parts.len) {
-            duration_sec = security::parse_duration(parts[i + 1]);
-            i += 2;
-        } else {
-            if (reason_buf.len() > 0) reason_buf.append_char(' ');
-            reason_buf.append_string(parts[i]);
-            i++;
-        }
-    }
-    if (reason_buf.len() > 0) reason = reason_buf.str_view();
+    String reason = argv.opt(1, "No reason given.");
+    long duration_sec = argv.count >= 3
+        ? security::parse_duration(argv.get(2))
+        : config::DEFAULT_BAN_DURATION_SEC;
 
     client::Client* target = server::find_client_by_uid(srv, uid);
     if (target == null) {
@@ -400,13 +391,13 @@ fn void cmd_ban(server::Server* srv, client::Client* c, String args) {
     io::printfn("[mod] %s banned UID %d (%s): %s", c.display_name(), uid, target.ipid, reason);
 }
 
-fn void cmd_unban(server::Server* srv, client::Client* c, String args) {
+fn void cmd_unban(server::Server* srv, client::Client* c, args::Args* argv) {
     if (!c.has_permission(commands::PERM_BAN)) {
         c.send_server_message("No permission.");
         return;
     }
 
-    int index = args.to_int() ?? -1;
+    int index = argv.get_int(0, -1);
     if (index < 0) {
         c.send_server_message("Usage: /unban <ban-index>");
         return;
@@ -423,13 +414,13 @@ fn void cmd_unban(server::Server* srv, client::Client* c, String args) {
 // Mute / Unmute
 // ============================================================
 
-fn void cmd_mute(server::Server* srv, client::Client* c, String args) {
+fn void cmd_mute(server::Server* srv, client::Client* c, args::Args* argv) {
     if (!c.has_permission(commands::PERM_MUTE)) {
         c.send_server_message("No permission.");
         return;
     }
 
-    int uid = args.to_int() ?? -1;
+    int uid = argv.get_int(0, -1);
     client::Client* target = server::find_client_by_uid(srv, uid);
     if (target == null) {
         c.send_server_message("Player not found.");
@@ -441,13 +432,13 @@ fn void cmd_mute(server::Server* srv, client::Client* c, String args) {
     c.send_server_message(string::tformat("Muted UID %d.", uid));
 }
 
-fn void cmd_unmute(server::Server* srv, client::Client* c, String args) {
+fn void cmd_unmute(server::Server* srv, client::Client* c, args::Args* argv) {
     if (!c.has_permission(commands::PERM_MUTE)) {
         c.send_server_message("No permission.");
         return;
     }
 
-    int uid = args.to_int() ?? -1;
+    int uid = argv.get_int(0, -1);
     client::Client* target = server::find_client_by_uid(srv, uid);
     if (target == null) {
         c.send_server_message("Player not found.");
@@ -459,13 +450,13 @@ fn void cmd_unmute(server::Server* srv, client::Client* c, String args) {
     c.send_server_message(string::tformat("Unmuted UID %d.", uid));
 }
 
-fn void cmd_oocmute(server::Server* srv, client::Client* c, String args) {
+fn void cmd_oocmute(server::Server* srv, client::Client* c, args::Args* argv) {
     if (!c.has_permission(commands::PERM_MUTE)) {
         c.send_server_message("No permission.");
         return;
     }
 
-    int uid = args.to_int() ?? -1;
+    int uid = argv.get_int(0, -1);
     client::Client* target = server::find_client_by_uid(srv, uid);
     if (target == null) { c.send_server_message("Player not found."); return; }
 
@@ -474,13 +465,13 @@ fn void cmd_oocmute(server::Server* srv, client::Client* c, String args) {
     c.send_server_message(string::tformat("OOC-muted UID %d.", uid));
 }
 
-fn void cmd_oocunmute(server::Server* srv, client::Client* c, String args) {
+fn void cmd_oocunmute(server::Server* srv, client::Client* c, args::Args* argv) {
     if (!c.has_permission(commands::PERM_MUTE)) {
         c.send_server_message("No permission.");
         return;
     }
 
-    int uid = args.to_int() ?? -1;
+    int uid = argv.get_int(0, -1);
     client::Client* target = server::find_client_by_uid(srv, uid);
     if (target == null) { c.send_server_message("Player not found."); return; }
 
@@ -493,21 +484,20 @@ fn void cmd_oocunmute(server::Server* srv, client::Client* c, String args) {
 // Force pair (moderator)
 // ============================================================
 
-fn void cmd_forcepair(server::Server* srv, client::Client* c, String args) {
+fn void cmd_forcepair(server::Server* srv, client::Client* c, args::Args* argv) {
     if (!c.has_permission(commands::PERM_MUTE)) {
         c.send_server_message("No permission.");
         return;
     }
 
     // /forcepair <uid1> <uid2>
-    String[] parts = args.tsplit(" ");
-    if (parts.len < 2) {
+    if (argv.count < 2) {
         c.send_server_message("Usage: /forcepair <uid1> <uid2>");
         return;
     }
 
-    int uid1 = parts[0].to_int() ?? -1;
-    int uid2 = parts[1].to_int() ?? -1;
+    int uid1 = argv.get_int(0, -1);
+    int uid2 = argv.get_int(1, -1);
 
     client::Client* a = server::find_client_by_uid(srv, uid1);
     client::Client* b = server::find_client_by_uid(srv, uid2);
@@ -521,13 +511,13 @@ fn void cmd_forcepair(server::Server* srv, client::Client* c, String args) {
     c.send_server_message(string::tformat("Force-paired UID %d and UID %d.", uid1, uid2));
 }
 
-fn void cmd_forceunpair(server::Server* srv, client::Client* c, String args) {
+fn void cmd_forceunpair(server::Server* srv, client::Client* c, args::Args* argv) {
     if (!c.has_permission(commands::PERM_MUTE)) {
         c.send_server_message("No permission.");
         return;
     }
 
-    int uid = args.to_int() ?? -1;
+    int uid = argv.get_int(0, -1);
     client::Client* target = server::find_client_by_uid(srv, uid);
     if (target == null) {
         c.send_server_message("Player not found.");

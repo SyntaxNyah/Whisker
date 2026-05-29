@@ -147,17 +147,6 @@ fn String build_simple(String header) {
     return pkt.str_view();
 }
 
-// Build a packet with raw (pre-escaped) field string.
-// Used when forwarding packets without re-escaping.
-fn String build_raw(String header, String raw_fields) {
-    DString pkt = dstring::temp();
-    pkt.append_string(header);
-    pkt.append_char(config::FIELD_SEPARATOR);
-    pkt.append_string(raw_fields);
-    pkt.append_string(config::PACKET_TERMINATOR);
-    return pkt.str_view();
-}
-
 // ============================================================
 // TCP Packet Buffer
 // ============================================================

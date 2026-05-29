@@ -247,10 +247,12 @@ Whisker/
     ├── area.c3         Area management
     ├── packets.c3      Packet handlers
     ├── commands.c3     Command system
+    ├── args.c3         Quote-aware command argument parsing
     ├── moderation.c3   Mod commands
     ├── pairing.c3      Pairing system
     ├── security.c3     Rate limiting & protection
     ├── websocket.c3    WebSocket support
+    ├── console.c3      Interactive server console
     └── plugin.c3       Plugin system
 ```
 
@@ -261,6 +263,7 @@ Whisker/
 | Change a constant/default | `config.c3` |
 | Add a player command | `commands.c3` |
 | Add a mod command | `moderation.c3` |
+| Parse command arguments | `args.c3` |
 | Handle a new AO2 packet | `packets.c3` |
 | Change area behavior | `area.c3` |
 | Change rate limits | `security.c3` + `config.c3` |
@@ -420,12 +423,29 @@ https://github.com/AttorneyOnline/docs
 
 ## Adding a New Command
 
-Say you want to add `/coinflip` that flips a coin.
+Built-in commands receive a parsed **argument list**, not a raw string. The
+dispatcher splits the command tail once — quote-aware — and hands every command
+an `args::Args`. You never call `tsplit` or `index_of_char` yourself.
+
+```c3
+// The Args API (see args.c3)
+argv.is_empty()             // true if no arguments were given
+argv.count                  // number of tokens
+argv.get(i)                 // token i, or "" if missing
+argv.opt(i, "fallback")     // token i, or a fallback string
+argv.get_int(i, -1)         // token i parsed as int, or a fallback
+argv.rest(from)             // raw remainder from token `from` (free text)
+argv.has("-flag")           // is "-flag" one of the tokens?
+argv.value_of("-d", "3d")   // the token after "-d", or a fallback
+```
+
+Quotes group whitespace into one token, so `/ban 12 "ban evading" "3 days"`
+arrives as the three tokens `12`, `ban evading`, `3 days`.
 
 ### Step 1: Add the handler in `commands.c3`
 
 ```c3
-fn void cmd_coinflip(client::Client* c, String args) {
+fn void cmd_coinflip(client::Client* c, args::Args* argv) {
     long seed = security::current_time_sec() * (long)c.uid;
     bool heads = (seed % 2) == 0;
 
@@ -435,12 +455,27 @@ fn void cmd_coinflip(client::Client* c, String args) {
 }
 ```
 
-### Step 2: Register in the dispatch function
-
-In `commands.c3`, find the `dispatch()` function and add a case:
+A command that takes arguments just reads them from `argv`:
 
 ```c3
-case cmd_name == "coinflip":  cmd_coinflip(c, args_str);
+fn void cmd_slap(server::Server* srv, client::Client* c, args::Args* argv) {
+    int uid = argv.get_int(0, -1);          // /slap <uid> [reason...]
+    String reason = argv.rest(1);           // everything after the UID
+    if (uid < 0) {
+        c.send_server_message("Usage: /slap <uid> [reason]");
+        return;
+    }
+    // ...
+}
+```
+
+### Step 2: Register in the dispatch function
+
+In `commands.c3`, find the `dispatch()` function and add a case. The parsed
+list is already built as `argv` — pass a pointer to it:
+
+```c3
+case cmd_name == "coinflip":  cmd_coinflip(c, &argv);
 ```
 
 ### Step 3: Add to /help
@@ -451,7 +486,13 @@ In `cmd_help()`, add a line:
 c.send_server_message("/coinflip        - Flip a coin");
 ```
 
-That's it! Three steps. No configuration files, no registration framework.
+That's it! Three steps. No configuration files, no registration framework, and
+no hand-rolled argument splitting.
+
+> **Plugins:** standalone plugin command handlers keep the frozen
+> `fn void(void*, String)` signature for ABI stability, so they receive the raw
+> argument string. They get the very same splitter through `api.args_split` —
+> see the [Plugin Dev Guide](../plugins/PLUGIN%20DEV%20GUIDE%20README.md).
 
 ---
 
@@ -744,6 +785,28 @@ if (!c.has_permission(commands::PERM_BAN)) {
     c.send_server_message("No permission.");
     return;
 }
+```
+
+### Parsing command arguments
+
+Built-in command handlers receive an already-parsed `args::Args*` — never split
+the raw string yourself:
+
+```c3
+// /kick <uid>
+int uid = argv.get_int(0, -1);
+if (uid < 0) {
+    c.send_server_message("Usage: /kick <uid>");
+    return;
+}
+
+// /pm <uid> <message> — message is free text after the UID
+int target = argv.get_int(0, -1);
+String message = argv.rest(1);
+
+// /ban <uid> [reason] [duration] — quotes group multi-word tokens
+String reason   = argv.opt(1, "No reason given.");
+long   duration = argv.count >= 3 ? security::parse_duration(argv.get(2)) : 0;
 ```
 
 ### Building a packet

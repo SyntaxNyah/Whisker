@@ -117,6 +117,7 @@ alias AreaSetBackgroundFn   = fn void(int, String);
 alias AreaGetLockFn         = fn int(int);
 alias AreaSetLockFn         = fn void(int, int);
 alias AreaInviteFn          = fn void(int, int);
+alias ArgsSplitFn           = fn int(String, String*, int);
 
 struct PluginAPI {
     // Registration
@@ -172,6 +173,7 @@ struct PluginAPI {
     AreaGetLockFn         area_get_lock;
     AreaSetLockFn         area_set_lock;
     AreaInviteFn          area_invite;
+    ArgsSplitFn           args_split;  // appended — see server's plugin.c3
 }
 
 // ============================================================

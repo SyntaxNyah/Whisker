@@ -19,6 +19,7 @@ import whisker::server;
 import whisker::moderation;
 import whisker::plugin;
 import whisker::config;
+import whisker::args;
 import std::io;
 import std::thread;
 
@@ -66,22 +67,26 @@ fn int console_thread(void* arg) {
 
 fn void process_command(server::Server* srv, String line) {
     String cmd;
-    String args = "";
+    String args_str = "";
 
     if (try space = line.index_of_char(' ')) {
         cmd = line[0..space - 1];
-        args = line[space + 1..].trim();
+        args_str = line[space + 1..].trim();
     } else {
         cmd = line;
     }
+
+    // Console commands use the same quote-aware argument list as in-game
+    // commands, so "addmod" can take a quoted password with spaces.
+    args::Args argv = args::parse(args_str);
 
     switch {
         case cmd == "help":
             cmd_help();
         case cmd == "addmod":
-            cmd_addmod(args);
+            cmd_addmod(&argv);
         case cmd == "removemod":
-            cmd_removemod(args);
+            cmd_removemod(&argv);
         case cmd == "listmods":
             cmd_listmods();
         case cmd == "reload":
@@ -113,17 +118,16 @@ fn void cmd_help() {
     moderation::list_roles();
 }
 
-fn void cmd_addmod(String args) {
-    String[] parts = args.tsplit(" ");
-    if (parts.len < 2) {
+fn void cmd_addmod(args::Args* argv) {
+    if (argv.count < 2) {
         io::printn("Usage: addmod <username> <password> [role]");
         io::printn("  Default role: moderator. See roles.toml for available roles.");
         return;
     }
 
-    String username = parts[0];
-    String password = parts[1];
-    String role = parts.len >= 3 ? parts[2] : "moderator";
+    String username = argv.get(0);
+    String password = argv.get(1);
+    String role = argv.opt(2, "moderator");
 
     if (moderation::add_account(username, password, role)) {
         io::printfn("[auth] Account '%s' created with role '%s'.", username, role);
@@ -132,8 +136,8 @@ fn void cmd_addmod(String args) {
     }
 }
 
-fn void cmd_removemod(String args) {
-    String username = args.trim();
+fn void cmd_removemod(args::Args* argv) {
+    String username = argv.get(0);
     if (username.len == 0) {
         io::printn("Usage: removemod <username>");
         return;

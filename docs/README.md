@@ -83,12 +83,13 @@ The plugin system is the answer to AO server fork fragmentation. Instead of
 forking the whole server to add features, write a plugin. Ship it separately.
 Everyone benefits.
 
-The Plugin API exposes 46 function pointers: commands, packet hooks with field
+The Plugin API exposes 47 function pointers: commands, packet hooks with field
 access, client operations (messaging, kick, mute, IPID), area management
-(lock/unlock, backgrounds, invites, status), server-wide broadcasting, and
-player count queries. The extended API (v2) is backwards-compatible — old
-plugins keep working without recompilation. See the dev guide for the full
-reference.
+(lock/unlock, backgrounds, invites, status), server-wide broadcasting,
+player count queries, and quote-aware argument splitting (`args_split`). The
+extended API is backwards-compatible — every addition is appended at the end of
+the struct, so old plugins keep working without recompilation. See the dev guide
+for the full reference.
 
 ## Protocol
 
@@ -110,10 +111,12 @@ src/
   area.c3        Area management and state
   packets.c3     All AO2 packet handlers
   commands.c3    OOC command dispatcher and player commands
+  args.c3        Quote-aware command argument tokenizer
   moderation.c3  Moderation commands (ban, kick, mute)
   pairing.c3     Persistent UID-based pairing system
   security.c3    Rate limiting, DDoS protection, connection filtering
   websocket.c3   WebSocket handshake + frame parsing
+  console.c3     Interactive server console (accounts, reload, status)
   plugin.c3      Runtime plugin loading system
 ```
 

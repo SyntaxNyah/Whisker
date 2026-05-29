@@ -705,7 +705,7 @@ You must `/login` first to use these.
 | `/login <user> <pass>` | Authenticate as a moderator |
 | `/logout` | De-authenticate |
 | `/kick <uid>` | Immediately disconnect a player |
-| `/ban <uid> [-d duration] [reason]` | Ban a player (default: 3 days) |
+| `/ban <uid> [reason] [duration]` | Ban a player (default: 3 days). Quote multi-word args: `/ban 12 "ban evading" "3 days"` |
 | `/unban <index>` | Remove a ban by its index number |
 | `/mute <uid>` | Prevent a player from sending IC messages |
 | `/unmute <uid>` | Restore IC messaging |
@@ -720,17 +720,23 @@ You must `/login` first to use these.
 
 ### Ban Duration Format
 
-The `/ban` command accepts a `-d` flag with these formats:
+The duration is the optional third argument of `/ban` (after the UID and the
+reason). It accepts these formats:
 
 | Format | Duration |
 |--------|----------|
 | `30s` | 30 seconds |
 | `5m` | 5 minutes |
 | `1h` | 1 hour |
-| `3d` | 3 days (default) |
+| `3d` | 3 days (default if omitted) |
 | `1w` | 1 week |
+| `3 days`, `1 week` | long forms work too (quote them) |
+| `0` | permanent |
 
-Example: `/ban 5 -d 1h Spamming the courtroom`
+Example: `/ban 5 "Spamming the courtroom" 1h`
+
+Arguments are split into a quote-aware list before the command runs, so a
+multi-word reason or duration must be quoted to stay a single argument.
 
 ---
 

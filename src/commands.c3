@@ -11,6 +11,7 @@ import whisker::config;
 import whisker::client;
 import whisker::server;
 import whisker::area;
+import whisker::args;
 import whisker::pairing;
 import whisker::moderation;
 import whisker::plugin;
@@ -44,7 +45,7 @@ fn void dispatch(server::Server* srv, client::Client* c, String message) {
     // Strip the leading '/'
     String cmd_line = message[1..];
 
-    // Split into command name and arguments
+    // Split into command name and the raw argument tail.
     String cmd_name;
     String args_str = "";
 
@@ -55,45 +56,50 @@ fn void dispatch(server::Server* srv, client::Client* c, String message) {
         cmd_name = cmd_line;
     }
 
-    // Let plugins handle first
+    // Plugins handle first. They receive the raw argument string (the
+    // plugin handler ABI is frozen at fn void(void*, String)); a plugin
+    // that wants a split list calls api.args_split — see plugin.c3.
     if (plugin::on_command(&srv.plugins, c, cmd_name, args_str)) {
         return; // Plugin consumed the command
     }
 
-    // Built-in commands
+    // Built-in commands receive a parsed, quote-aware argument list so no
+    // command has to re-implement splitting. Parse once, here.
+    args::Args argv = args::parse(args_str);
+
     switch {
         // ---- Player commands ----
-        case cmd_name == "help":        cmd_help(srv, c, args_str);
+        case cmd_name == "help":        cmd_help(srv, c, &argv);
         case cmd_name == "about":       cmd_about(c);
-        case cmd_name == "area":        cmd_area(srv, c, args_str);
+        case cmd_name == "area":        cmd_area(srv, c, &argv);
         case cmd_name == "areas":       cmd_areas(srv, c);
-        case cmd_name == "pos":         cmd_pos(srv, c, args_str);
+        case cmd_name == "pos":         cmd_pos(c, &argv);
         case cmd_name == "ga":          cmd_ga(srv, c);
         case cmd_name == "players":     cmd_ga(srv, c);
         case cmd_name == "gas":         cmd_gas(srv, c);
         case cmd_name == "charselect":  cmd_charselect(srv, c);
-        case cmd_name == "global":      cmd_global(srv, c, args_str);
-        case cmd_name == "pm":          cmd_pm(srv, c, args_str);
-        case cmd_name == "pair":        cmd_pair(srv, c, args_str);
+        case cmd_name == "global":      cmd_global(srv, c, &argv);
+        case cmd_name == "pm":          cmd_pm(srv, c, &argv);
+        case cmd_name == "pair":        cmd_pair(srv, c, &argv);
         case cmd_name == "unpair":      cmd_unpair(srv, c);
-        case cmd_name == "roll":        cmd_roll(c, args_str);
+        case cmd_name == "roll":        cmd_roll(c, &argv);
 
         // ---- Moderation commands ----
-        case cmd_name == "login":       moderation::cmd_login(srv, c, args_str);
+        case cmd_name == "login":       moderation::cmd_login(srv, c, &argv);
         case cmd_name == "logout":      moderation::cmd_logout(c);
-        case cmd_name == "kick":        moderation::cmd_kick(srv, c, args_str);
-        case cmd_name == "ban":         moderation::cmd_ban(srv, c, args_str);
-        case cmd_name == "unban":       moderation::cmd_unban(srv, c, args_str);
-        case cmd_name == "mute":        moderation::cmd_mute(srv, c, args_str);
-        case cmd_name == "unmute":      moderation::cmd_unmute(srv, c, args_str);
-        case cmd_name == "oocmute":     moderation::cmd_oocmute(srv, c, args_str);
-        case cmd_name == "oocunmute":   moderation::cmd_oocunmute(srv, c, args_str);
+        case cmd_name == "kick":        moderation::cmd_kick(srv, c, &argv);
+        case cmd_name == "ban":         moderation::cmd_ban(srv, c, &argv);
+        case cmd_name == "unban":       moderation::cmd_unban(srv, c, &argv);
+        case cmd_name == "mute":        moderation::cmd_mute(srv, c, &argv);
+        case cmd_name == "unmute":      moderation::cmd_unmute(srv, c, &argv);
+        case cmd_name == "oocmute":     moderation::cmd_oocmute(srv, c, &argv);
+        case cmd_name == "oocunmute":   moderation::cmd_oocunmute(srv, c, &argv);
         case cmd_name == "lock":        cmd_lock(srv, c);
         case cmd_name == "unlock":      cmd_unlock(srv, c);
-        case cmd_name == "invite":      cmd_invite(srv, c, args_str);
-        case cmd_name == "bg":          cmd_bg(srv, c, args_str);
-        case cmd_name == "forcepair":   moderation::cmd_forcepair(srv, c, args_str);
-        case cmd_name == "forceunpair": moderation::cmd_forceunpair(srv, c, args_str);
+        case cmd_name == "invite":      cmd_invite(srv, c, &argv);
+        case cmd_name == "bg":          cmd_bg(srv, c, &argv);
+        case cmd_name == "forcepair":   moderation::cmd_forcepair(srv, c, &argv);
+        case cmd_name == "forceunpair": moderation::cmd_forceunpair(srv, c, &argv);
 
         default:
             c.send_server_message(string::tformat("Unknown command: /%s. Try /help.", cmd_name));
@@ -104,10 +110,10 @@ fn void dispatch(server::Server* srv, client::Client* c, String message) {
 // Player commands
 // ============================================================
 
-fn void cmd_help(server::Server* srv, client::Client* c, String args) {
-    if (args.len > 0) {
+fn void cmd_help(server::Server* srv, client::Client* c, args::Args* argv) {
+    if (!argv.is_empty()) {
         // Help for specific command
-        cmd_help_specific(srv, c, args);
+        cmd_help_specific(srv, c, argv.get(0));
         return;
     }
 
@@ -155,8 +161,9 @@ fn void cmd_help_specific(server::Server* srv, client::Client* c, String cmd) {
             c.send_server_message("Both players must /pair each other for the pair to be established.");
             c.send_server_message("Pairs persist across character changes and area moves.");
         case cmd == "ban":
-            c.send_server_message("/ban <uid> [-d duration] [reason]");
-            c.send_server_message("Duration: 30s, 5m, 1h, 3d, 1w. Default: 3d.");
+            c.send_server_message("/ban <uid> [reason] [duration]");
+            c.send_server_message("Quote multi-word arguments: /ban 12 \"ban evading\" \"3 days\"");
+            c.send_server_message("Duration: 30s, 5m, 1h, 3d, 1w (default 3d). Omit or 0 = permanent.");
         case cmd == "roll":
             c.send_server_message("/roll [NdM] — Roll N dice with M sides. Default: 1d6.");
         default:
@@ -183,14 +190,17 @@ fn void cmd_about(client::Client* c) {
     c.send_server_message("License: AGPL-3.0 | Extend with plugins, not forks!");
 }
 
-fn void cmd_area(server::Server* srv, client::Client* c, String args) {
-    if (args.len == 0) {
+fn void cmd_area(server::Server* srv, client::Client* c, args::Args* argv) {
+    if (argv.is_empty()) {
         c.send_server_message(string::tformat("Current area: %s", srv.areas[c.area_id].name));
         return;
     }
 
+    // Area names can contain spaces. Match the whole tail ("Courtroom 1")
+    // as well as a single quoted token ("Courtroom 1").
+    String target = argv.rest(0);
     for (int i = 0; i < srv.area_count; i++) {
-        if (srv.areas[i].name == args) {
+        if (srv.areas[i].name == target || srv.areas[i].name == argv.get(0)) {
             packets::change_area(srv, c, i);
             return;
         }
@@ -207,20 +217,22 @@ fn void cmd_areas(server::Server* srv, client::Client* c) {
     }
 }
 
-fn void cmd_pos(server::Server* srv, client::Client* c, String args) {
-    if (args.len == 0) {
+fn void cmd_pos(client::Client* c, args::Args* argv) {
+    if (argv.is_empty()) {
         c.send_server_message(string::tformat("Position: %s", c.position));
         return;
     }
 
+    String pos = argv.get(0);
+
     // Validate position
-    if (args == "def" || args == "pro" || args == "wit" ||
-        args == "jud" || args == "hld" || args == "hlp") {
-        c.position = args;
+    if (pos == "def" || pos == "pro" || pos == "wit" ||
+        pos == "jud" || pos == "hld" || pos == "hlp") {
+        c.position = pos;
         // Send SP packet
-        String[] sp_fields = { args };
+        String[] sp_fields = { pos };
         c.send_packet("SP", sp_fields);
-        c.send_server_message(string::tformat("Position set to %s.", args));
+        c.send_server_message(string::tformat("Position set to %s.", pos));
     } else {
         c.send_server_message("Valid positions: def, pro, wit, jud, hld, hlp");
     }
@@ -275,13 +287,13 @@ fn void cmd_charselect(server::Server* srv, client::Client* c) {
     c.send_simple("DONE");
 }
 
-fn void cmd_global(server::Server* srv, client::Client* c, String args) {
-    if (args.len == 0) {
+fn void cmd_global(server::Server* srv, client::Client* c, args::Args* argv) {
+    if (argv.is_empty()) {
         c.send_server_message("Usage: /global <message>");
         return;
     }
 
-    String msg = string::tformat("[GLOBAL] %s: %s", c.display_name(), args);
+    String msg = string::tformat("[GLOBAL] %s: %s", c.display_name(), argv.raw);
     for (int i = 0; i < server::MAX_SERVER_CLIENTS; i++) {
         client::Client* other = srv.clients[i];
         if (other != null && other.joined) {
@@ -290,32 +302,28 @@ fn void cmd_global(server::Server* srv, client::Client* c, String args) {
     }
 }
 
-fn void cmd_pm(server::Server* srv, client::Client* c, String args) {
-    // /pm <uid> <message>
-    if (try space = args.index_of_char(' ')) {
-        int uid = args[0..space - 1].to_int() ?? -1;
-        String message = args[space + 1..].trim();
+fn void cmd_pm(server::Server* srv, client::Client* c, args::Args* argv) {
+    // /pm <uid> <message> — message is everything after the UID.
+    int uid = argv.get_int(0, -1);
+    String message = argv.rest(1);
 
-        if (uid < 0 || message.len == 0) {
-            c.send_server_message("Usage: /pm <uid> <message>");
-            return;
-        }
-
-        client::Client* target = server::find_client_by_uid(srv, uid);
-        if (target == null) {
-            c.send_server_message("Player not found.");
-            return;
-        }
-
-        target.send_server_message(string::tformat("[PM from %s] %s", c.display_name(), message));
-        c.send_server_message(string::tformat("[PM to %s] %s", target.display_name(), message));
-    } else {
+    if (uid < 0 || message.len == 0) {
         c.send_server_message("Usage: /pm <uid> <message>");
+        return;
     }
+
+    client::Client* target = server::find_client_by_uid(srv, uid);
+    if (target == null) {
+        c.send_server_message("Player not found.");
+        return;
+    }
+
+    target.send_server_message(string::tformat("[PM from %s] %s", c.display_name(), message));
+    c.send_server_message(string::tformat("[PM to %s] %s", target.display_name(), message));
 }
 
-fn void cmd_pair(server::Server* srv, client::Client* c, String args) {
-    int target_uid = args.to_int() ?? -1;
+fn void cmd_pair(server::Server* srv, client::Client* c, args::Args* argv) {
+    int target_uid = argv.get_int(0, -1);
     if (target_uid < 0) {
         c.send_server_message("Usage: /pair <uid>");
         return;
@@ -334,15 +342,16 @@ fn void cmd_unpair(server::Server* srv, client::Client* c) {
     pairing::cancel_pair(c, &srv.clients, srv.client_count);
 }
 
-fn void cmd_roll(client::Client* c, String args) {
+fn void cmd_roll(client::Client* c, args::Args* argv) {
     int num_dice = 1;
     int num_sides = 6;
 
-    if (args.len > 0) {
-        // Parse NdM format
-        if (try d_pos = args.index_of_char('d')) {
-            num_dice = args[0..d_pos - 1].to_int() ?? 1;
-            num_sides = args[d_pos + 1..].to_int() ?? 6;
+    if (!argv.is_empty()) {
+        // Parse NdM format (e.g. 2d6)
+        String spec = argv.get(0);
+        if (try d_pos = spec.index_of_char('d')) {
+            num_dice = spec[0..d_pos - 1].to_int() ?? 1;
+            num_sides = spec[d_pos + 1..].to_int() ?? 6;
         }
     }
 
@@ -407,8 +416,8 @@ fn void cmd_unlock(server::Server* srv, client::Client* c) {
     server::broadcast_arup(srv, config::ARUP_LOCK);
 }
 
-fn void cmd_invite(server::Server* srv, client::Client* c, String args) {
-    int uid = args.to_int() ?? -1;
+fn void cmd_invite(server::Server* srv, client::Client* c, args::Args* argv) {
+    int uid = argv.get_int(0, -1);
     if (uid < 0) {
         c.send_server_message("Usage: /invite <uid>");
         return;
@@ -418,13 +427,14 @@ fn void cmd_invite(server::Server* srv, client::Client* c, String args) {
     c.send_server_message(string::tformat("Invited UID %d.", uid));
 }
 
-fn void cmd_bg(server::Server* srv, client::Client* c, String args) {
-    if (args.len == 0) {
+fn void cmd_bg(server::Server* srv, client::Client* c, args::Args* argv) {
+    if (argv.is_empty()) {
         c.send_server_message("Usage: /bg <background>");
         return;
     }
 
-    srv.areas[c.area_id].background = args;
-    String[] bn_fields = { args };
+    String bg = argv.rest(0);
+    srv.areas[c.area_id].background = bg;
+    String[] bn_fields = { bg };
     server::broadcast_area(srv, c.area_id, protocol::build("BN", bn_fields));
 }

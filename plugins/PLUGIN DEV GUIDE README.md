@@ -190,6 +190,39 @@ Permission bits (combine with `|`):
 - `PERM_MODIFY_AREA = 16`
 - `PERM_ADMIN = 64`
 
+### Parsing command arguments
+
+Your command handler receives the raw argument string — everything the player
+typed after the command name. The handler signature `fn void(void*, String)` is
+frozen for ABI stability (so old compiled plugins keep working), which means the
+server can't hand you a pre-split list directly. Instead it exposes the same
+quote-aware splitter the built-in commands use, through `api.args_split`:
+
+```c3
+fn void cmd_ban(void* c, String args) {
+    // Splits  12 "ban evading" "3 days"  into  ["12", "ban evading", "3 days"]
+    String[8] argv;
+    int n = api.args_split(args, &argv[0], 8);   // returns the token count
+
+    if (n < 1) {
+        api.client_send_msg(c, "Usage: /ban <uid> [reason] [duration]");
+        return;
+    }
+
+    int uid         = argv[0].to_int() ?? -1;
+    String reason   = n >= 2 ? argv[1] : "No reason given.";
+    String duration = n >= 3 ? argv[2] : "3d";
+    // ...
+}
+```
+
+`args_split(args, out, max)` writes up to `max` tokens into your buffer and
+returns how many it found. Tokens are sub-slices of `args` (no allocation), so
+they stay valid for as long as you hold the original string. Double or single
+quotes group whitespace into a single token, so multi-word arguments survive
+intact. You're free to parse the raw string by hand instead — `args_split` is a
+convenience, not a requirement.
+
 ### Registering Packet Hooks
 
 ```c3
@@ -264,6 +297,9 @@ api.packet_get_field(pkt, 0)             // Get field by index (String)
 api.client_kick(c)                       // Disconnect a player
 api.client_mute(c)                       // Mute IC chat
 api.client_unmute(c)                     // Unmute IC chat
+
+// Command arguments
+api.args_split(args, &buf[0], max)       // Quote-aware split into buf (String[]); returns token count
 ```
 
 ## Example Plugins
@@ -346,6 +382,9 @@ struct PluginAPI {
     fn int(int)        area_get_lock;
     fn void(int, int)  area_set_lock;
     fn void(int, int)  area_invite;
+    // Appended after v2 — see "Version Compatibility". Old plugins that
+    // stop at area_invite stay ABI-compatible; this field is just ignored.
+    fn int(String, String*, int) args_split;
 }
 
 PluginAPI* api;
@@ -465,6 +504,9 @@ struct PluginAPI {
     fn int(int)        area_get_lock;
     fn void(int, int)  area_set_lock;
     fn void(int, int)  area_invite;
+    // Appended after v2 — see "Version Compatibility". Old plugins that
+    // stop at area_invite stay ABI-compatible; this field is just ignored.
+    fn int(String, String*, int) args_split;
 }
 
 PluginAPI* api;
@@ -500,7 +542,9 @@ fn bool on_player_ready(void* c, void* pkt) {
 ### Example 3: Warn Command (mod-only command)
 
 Adds `/warn <uid> <reason>` that sends a visible warning to a player.
-Requires MUTE permission (permission bit 1).
+Requires MUTE permission (permission bit 1). Shows `api.args_split` turning the
+raw argument string into a token list — quote a multi-word reason
+(`/warn 5 "stop spamming"`).
 
 ```c3
 // file: warn.c3
@@ -526,25 +570,23 @@ fn void whisker_plugin_init(PluginAPI* a) @export("whisker_plugin_init") {
 fn void whisker_plugin_shutdown() @export("whisker_plugin_shutdown") {}
 
 fn void cmd_warn(void* c, String args) {
-    if (args.len == 0) {
-        api.client_send_msg(c, "Usage: /warn <uid> <reason>");
+    // Let the server split the arguments — quote multi-word reasons,
+    // e.g.  /warn 5 "stop spamming".
+    String[8] argv;
+    int n = api.args_split(args, &argv[0], 8);
+
+    if (n < 1) {
+        api.client_send_msg(c, "Usage: /warn <uid> \"<reason>\"");
         return;
     }
 
-    int target_uid = -1;
-    String reason = "No reason given.";
-
-    if (try space = args.index_of_char(' ')) {
-        target_uid = args[0..space - 1].to_int() ?? -1;
-        reason = args[space + 1..].trim();
-    } else {
-        target_uid = args.to_int() ?? -1;
-    }
-
+    int target_uid = argv[0].to_int() ?? -1;
     if (target_uid < 0) {
         api.client_send_msg(c, "Invalid UID.");
         return;
     }
+
+    String reason = n >= 2 ? argv[1] : "No reason given.";
 
     void* target = api.find_client(target_uid);
     if (target != null) {
@@ -1324,6 +1366,12 @@ The v2 extension (15 additional functions) fills those gaps:
 `PluginAPI` struct. Old compiled plugins only know about the first 31 fields and
 never touch the new ones — they keep working without recompilation. New plugins
 can use all 46.
+
+One more field was appended later, the same backwards-compatible way:
+`args_split` (a quote-aware argument tokenizer — see
+[Parsing command arguments](#parsing-command-arguments)), bringing the total to
+**47**. Plugins compiled before it was added stop at `area_invite` and simply
+never read it, so they keep working untouched.
 
 **What this unlocks:** With the v2 API, you can now build auto-moderators,
 spam filters, area lockdown systems, player count monitors, welcome-back

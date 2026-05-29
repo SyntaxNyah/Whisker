@@ -123,10 +123,12 @@ src/
   area.c3        Area management and state
   packets.c3     All AO2 packet handlers
   commands.c3    OOC command dispatcher and player commands
+  args.c3        Quote-aware command argument tokenizer
   moderation.c3  Moderation commands (ban, kick, mute)
   pairing.c3     Persistent UID-based pairing system
   security.c3    Rate limiting, DDoS protection, connection filtering
   websocket.c3   WebSocket handshake + frame parsing
+  console.c3     Interactive server console (accounts, reload, status)
   plugin.c3      Runtime plugin loading system
 ```
 

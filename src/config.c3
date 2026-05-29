@@ -386,7 +386,3 @@ fn String[]? load_characters(String config_dir) {
 fn String[]? load_music(String config_dir) {
     return load_lines(string::tformat("%s/music.txt", config_dir));
 }
-
-fn String[]? load_backgrounds(String config_dir) {
-    return load_lines(string::tformat("%s/backgrounds.txt", config_dir));
-}

@@ -169,6 +169,13 @@ alias ApiAreaGetLockFn         = fn int(int area_id);
 alias ApiAreaSetLockFn         = fn void(int area_id, int lock_state);
 alias ApiAreaInviteFn          = fn void(int area_id, int uid);
 
+// Argument splitting — quote-aware tokenizer for command handlers.
+// Plugin command handlers still receive the raw `String args` (the handler
+// ABI is frozen), but this helper lets a plugin split it into a list the
+// same way built-in commands do, without re-implementing the parser.
+// Fills `out` (a caller-provided String buffer) and returns the token count.
+alias ApiArgsSplitFn           = fn int(String args, String* out, int max);
+
 // ============================================================
 // Plugin API — passed to plugins during init
 // ============================================================
@@ -232,6 +239,10 @@ struct PluginAPI {
     ApiAreaGetLockFn         area_get_lock;
     ApiAreaSetLockFn         area_set_lock;
     ApiAreaInviteFn          area_invite;
+
+    // Appended after the v2 block — see the ABI note above. Existing
+    // compiled plugins never read this field, so they keep working.
+    ApiArgsSplitFn           args_split;
 }
 
 // ============================================================

@@ -34,6 +34,7 @@ Whisker is an Attorney Online 2 (AO2) server written in C3. It implements the fu
 | `whisker::area` | `area.c3` | Area state, evidence, CMs, lock |
 | `whisker::packets` | `packets.c3` | All AO2 packet handlers |
 | `whisker::commands` | `commands.c3` | OOC command dispatch, player commands |
+| `whisker::args` | `args.c3` | Quote-aware command argument tokenizer |
 | `whisker::moderation` | `moderation.c3` | Mod commands (ban, kick, mute) |
 | `whisker::pairing` | `pairing.c3` | Persistent UID-based pairing |
 | `whisker::security` | `security.c3` | Rate limiting, IP tracking, bans |
@@ -45,12 +46,13 @@ Whisker is an Attorney Online 2 (AO2) server written in C3. It implements the fu
 
 1. **No magic numbers.** Every constant is named in `config.c3`. Grep for `const` to find them all.
 2. **Thread-per-client.** Simple model like Athena. Each connection gets its own handler thread with its own `@pool_init` memory pool. Client structs are created inside the handler's pool to prevent cross-pool memory corruption.
-3. **Plugins over forks.** The plugin system lets you add commands, packet hooks, moderation actions, area management, and server-wide broadcasts without modifying core code. The PluginAPI exposes 46 function pointers covering registration, client operations, area operations, broadcasting, packet field access, and moderation. The extended API (v2) adds 15 functions for packet inspection, moderation actions, server-wide broadcasts, area manipulation, player counting, and IPID access — all appended at the end of the struct for backwards compatibility with existing compiled plugins.
-4. **UID-based pairing.** Pairs survive character changes and area moves (inspired by Nyathena).
-5. **Multi-layer rate limiting.** Separate limits for IC messages, OOC, raw packets, and connections per IP.
-6. **Reverse proxy aware.** Extracts real IPs from X-Forwarded-For, X-Real-IP, CF-Connecting-IP headers.
-7. **SIGPIPE-safe.** Global `signal(SIGPIPE, SIG_IGN)` plus per-send `MSG_NOSIGNAL` flag. Writing to a broken socket marks the client disconnected instead of killing the server.
-8. **Atomic WebSocket frames.** `send_raw` builds the complete WS frame (header + payload) in a single buffer and sends with one syscall to prevent frame interleaving during concurrent broadcasts.
+3. **Plugins over forks.** The plugin system lets you add commands, packet hooks, moderation actions, area management, and server-wide broadcasts without modifying core code. The PluginAPI exposes 47 function pointers covering registration, client operations, area operations, broadcasting, packet field access, moderation, and argument splitting. The extended API (v2) added 15 functions for packet inspection, moderation actions, server-wide broadcasts, area manipulation, player counting, and IPID access; a later addition appended `args_split` (the quote-aware argument tokenizer) — all appended at the end of the struct for backwards compatibility with existing compiled plugins.
+4. **Arguments arrive as a list.** Command code never re-splits a raw string. `whisker::args` tokenizes the command tail once (quote-aware: `12 "ban evading" "3 days"` → three tokens) and built-in commands receive a parsed `Args`. The plugin command handler ABI stays `fn void(void*, String)` for binary stability, but plugins get the same splitter through `api.args_split`.
+5. **UID-based pairing.** Pairs survive character changes and area moves (inspired by Nyathena).
+6. **Multi-layer rate limiting.** Separate limits for IC messages, OOC, raw packets, and connections per IP.
+7. **Reverse proxy aware.** Extracts real IPs from X-Forwarded-For, X-Real-IP, CF-Connecting-IP headers.
+8. **SIGPIPE-safe.** Global `signal(SIGPIPE, SIG_IGN)` plus per-send `MSG_NOSIGNAL` flag. Writing to a broken socket marks the client disconnected instead of killing the server.
+9. **Atomic WebSocket frames.** `send_raw` builds the complete WS frame (header + payload) in a single buffer and sends with one syscall to prevent frame interleaving during concurrent broadcasts.
 
 ### Protocol Flow
 
@@ -105,6 +107,7 @@ The PluginAPI (defined in `plugin.c3`, wrappers in `server.c3`) exposes:
 - **Area ops**: CM management, lock/unlock, invite, background, status, song, force-move
 - **Packet access**: read field count and individual fields from hooked packets
 - **Server info**: player count, area count, per-area player count
+- **Argument parsing**: `args_split` — quote-aware tokenizer so handlers don't split raw strings by hand
 
 See `plugins/README.md` for the full development guide.
 

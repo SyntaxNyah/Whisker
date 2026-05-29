@@ -24,7 +24,17 @@
       "Read(//c/Users/arbok/Documents/GitHub/Whisker/$LOCALAPPDATA/**)",
       "Read(//c/Users/arbok/Documents/GitHub/Whisker/$PROGRAMFILES/**)",
       "Bash(/c/c3c/c3/c3c.exe build:*)",
-      "Bash(/c/c3c/c3/c3c.exe dynamic-lib:*)"
+      "Bash(/c/c3c/c3/c3c.exe dynamic-lib:*)",
+      "Bash(c3c --version)",
+      "PowerShell(Get-Command *)",
+      "PowerShell(& C:\\\\c3c\\\\c3\\\\c3c.exe --version; Write-Output \"---BUILD---\"; & C:\\\\c3c\\\\c3\\\\c3c.exe build 2>&1 | Select-Object -Last 30)",
+      "PowerShell(& C:\\\\c3c\\\\c3\\\\c3c.exe build 2>&1 | Select-Object -Last 30)",
+      "PowerShell(& C:\\\\c3c\\\\c3\\\\c3c.exe build 2>&1 | Select-Object -Last 40)",
+      "PowerShell($a = Get-FileHash \"C:\\\\Users\\\\arbok\\\\Documents\\\\GitHub\\\\Whisker\\\\docs\\\\PLUGIN DEV GUIDE README.md\" -Algorithm MD5; $b = Get-FileHash \"C:\\\\Users\\\\arbok\\\\Documents\\\\GitHub\\\\Whisker\\\\plugins\\\\PLUGIN DEV GUIDE README.md\" -Algorithm MD5; \"docs: $\\($a.Hash\\)\"; \"plugins: $\\($b.Hash\\)\"; if \\($a.Hash -eq $b.Hash\\) { \"IDENTICAL\" } else { \"DIFFERENT\" })",
+      "PowerShell(Copy-Item *)",
+      "PowerShell(& C:\\\\c3c\\\\c3\\\\c3c.exe test 2>&1 | Select-Object -Last 40)",
+      "PowerShell(& C:\\\\c3c\\\\c3\\\\c3c.exe build 2>&1 | Select-Object -Last 10; Write-Output \"---ARTIFACT---\"; Get-ChildItem out\\\\whisker.exe | Select-Object Name, Length, LastWriteTime)",
+      "PowerShell(Write-Output \"=== BUILD ===\"; & C:\\\\c3c\\\\c3\\\\c3c.exe build 2>&1 | Select-Object -Last 3; Write-Output \"=== TEST ===\"; & C:\\\\c3c\\\\c3\\\\c3c.exe test 2>&1 | Select-Object -Last 3; Write-Output \"=== GIT STATUS ===\"; git status --short)"
     ]
   }
 }

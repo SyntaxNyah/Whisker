@@ -9,6 +9,7 @@ module whisker::server;
 import whisker::config;
 import whisker::client;
 import whisker::area;
+import whisker::args;
 import whisker::protocol;
 import whisker::security;
 import whisker::packets;
@@ -906,6 +907,20 @@ fn void _api_area_invite(int area_id, int uid) {
     _plugin_srv.areas[area_id].invite(uid);
 }
 
+// Split a raw argument string into a quote-aware token list, writing up to
+// `max` tokens into the caller-provided buffer and returning the count.
+// The written tokens are sub-slices of `input` (no allocation), so they stay
+// valid for as long as the plugin holds the original string.
+fn int _api_args_split(String input, String* out, int max) {
+    if (out == null || max <= 0) return 0;
+    args::Args a = args::parse(input);
+    int n = a.count < max ? a.count : max;
+    for (int i = 0; i < n; i++) {
+        out[i] = a.tokens[i];
+    }
+    return n;
+}
+
 // ============================================================
 // Build the fully populated PluginAPI
 // ============================================================
@@ -960,5 +975,6 @@ fn plugin::PluginAPI build_plugin_api(Server* srv) {
         .area_get_lock         = &_api_area_get_lock,
         .area_set_lock         = &_api_area_set_lock,
         .area_invite           = &_api_area_invite,
+        .args_split            = &_api_args_split,
     };
 }
