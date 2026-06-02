@@ -912,7 +912,7 @@ fn void _api_area_invite(int area_id, int uid) {
 // The written tokens are sub-slices of `input` (no allocation), so they stay
 // valid for as long as the plugin holds the original string.
 fn int _api_args_split(String input, String* out, int max) {
-    if (out == null || max <= 0 || input == '') return 0;
+    if (out == null || max <= 0 || input.len == 0) return 0;
     args::Args a = args::parse(input);
     int n = a.count < max ? a.count : max;
     for (int i = 0; i < n; i++) {
