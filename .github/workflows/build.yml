@@ -24,12 +24,10 @@ jobs:
           - os: ubuntu-latest
             name: Linux x86_64
             artifact: whisker-linux-x86_64
-            binary: build/whisker
 
           - os: windows-latest
             name: Windows x86_64
             artifact: whisker-windows-x86_64.exe
-            binary: build/whisker.exe
 
     steps:
       - name: Checkout
@@ -58,14 +56,32 @@ jobs:
       - name: Build
         run: c3c build
 
-      - name: Rename artifact (Linux)
+      - name: Stage artifact (Linux)
         if: runner.os == 'Linux'
-        run: cp build/whisker whisker-linux-x86_64
+        run: |
+          binary=$(find . -maxdepth 5 -type f -name "whisker" ! -path "*/src/*" 2>/dev/null | head -1)
+          if [ -z "$binary" ]; then
+            echo "Binary not found. Workspace after build:"
+            find . -maxdepth 4 -type f ! -path "*/.git/*" | head -40
+            exit 1
+          fi
+          echo "Found: $binary"
+          cp "$binary" whisker-linux-x86_64
 
-      - name: Rename artifact (Windows)
+      - name: Stage artifact (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: Copy-Item build\whisker.exe whisker-windows-x86_64.exe
+        run: |
+          $binary = Get-ChildItem -Path . -Recurse -Depth 5 -Filter "whisker.exe" |
+            Where-Object { $_.FullName -notlike "*\src\*" } |
+            Select-Object -First 1 -ExpandProperty FullName
+          if (-not $binary) {
+            Write-Host "Binary not found. Workspace after build:"
+            Get-ChildItem -Recurse -Depth 4 | Where-Object { -not $_.PSIsContainer } | Select-Object FullName
+            exit 1
+          }
+          Write-Host "Found: $binary"
+          Copy-Item $binary whisker-windows-x86_64.exe
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
