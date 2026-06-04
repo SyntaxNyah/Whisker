@@ -1,0 +1,81 @@
+name: Build
+
+# Builds Linux and Windows binaries on every push/PR and uploads them as
+# downloadable artifacts. Pushing a tag like `v1.2.3` also publishes a
+# GitHub Release with the same binaries attached.
+
+on:
+  push:
+    branches: ["**"]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            name: Linux x86_64
+            artifact: whisker-linux-x86_64
+            binary: build/whisker
+
+          - os: windows-latest
+            name: Windows x86_64
+            artifact: whisker-windows-x86_64.exe
+            binary: build/whisker.exe
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup C3 (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          curl -sL https://github.com/c3lang/c3c/releases/latest/download/c3-linux.tar.gz -o c3c.tar.gz
+          tar xzf c3c.tar.gz
+          C3_DIR=$(find . -maxdepth 1 -type d -name "c3*" | head -1)
+          echo "$PWD/$C3_DIR" >> $GITHUB_PATH
+
+      - name: Setup C3 (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest -Uri "https://github.com/c3lang/c3c/releases/latest/download/c3-windows.zip" -OutFile c3c.zip
+          Expand-Archive c3c.zip -DestinationPath .
+          $c3dir = (Get-ChildItem -Directory | Where-Object { $_.Name -like "c3*" } | Select-Object -First 1).FullName
+          Add-Content -Path $env:GITHUB_PATH -Value $c3dir
+
+      - name: Verify C3
+        run: c3c --version
+
+      - name: Build
+        run: c3c build
+
+      - name: Rename artifact (Linux)
+        if: runner.os == 'Linux'
+        run: cp build/whisker whisker-linux-x86_64
+
+      - name: Rename artifact (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Copy-Item build\whisker.exe whisker-windows-x86_64.exe
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
+          if-no-files-found: error
+
+      - name: Publish release (tags only)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ matrix.artifact }}
