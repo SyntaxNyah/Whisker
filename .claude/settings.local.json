@@ -34,7 +34,8 @@
       "PowerShell(Copy-Item *)",
       "PowerShell(& C:\\\\c3c\\\\c3\\\\c3c.exe test 2>&1 | Select-Object -Last 40)",
       "PowerShell(& C:\\\\c3c\\\\c3\\\\c3c.exe build 2>&1 | Select-Object -Last 10; Write-Output \"---ARTIFACT---\"; Get-ChildItem out\\\\whisker.exe | Select-Object Name, Length, LastWriteTime)",
-      "PowerShell(Write-Output \"=== BUILD ===\"; & C:\\\\c3c\\\\c3\\\\c3c.exe build 2>&1 | Select-Object -Last 3; Write-Output \"=== TEST ===\"; & C:\\\\c3c\\\\c3\\\\c3c.exe test 2>&1 | Select-Object -Last 3; Write-Output \"=== GIT STATUS ===\"; git status --short)"
+      "PowerShell(Write-Output \"=== BUILD ===\"; & C:\\\\c3c\\\\c3\\\\c3c.exe build 2>&1 | Select-Object -Last 3; Write-Output \"=== TEST ===\"; & C:\\\\c3c\\\\c3\\\\c3c.exe test 2>&1 | Select-Object -Last 3; Write-Output \"=== GIT STATUS ===\"; git status --short)",
+      "Bash(echo \"EXIT: $?\")"
     ]
   }
 }

@@ -218,10 +218,20 @@ fn void cmd_ban(void* c, String args) {
 
 `args_split(args, out, max)` writes up to `max` tokens into your buffer and
 returns how many it found. Tokens are sub-slices of `args` (no allocation), so
-they stay valid for as long as you hold the original string. Double or single
-quotes group whitespace into a single token, so multi-word arguments survive
-intact. You're free to parse the raw string by hand instead — `args_split` is a
-convenience, not a requirement.
+they're valid for as long as `args` itself is — which is **only for the duration
+of this handler call**. Double or single quotes group whitespace into a single
+token, so multi-word arguments survive intact. You're free to parse the raw
+string by hand instead — `args_split` is a convenience, not a requirement.
+
+> **Two ways this bites people (see [Common Crashes](#common-crashes-and-how-to-avoid-them) for the full list):**
+>
+> - **`max` must equal your buffer length.** `args_split` writes up to `max`
+>   tokens; a `max` larger than your `argv` array overflows the stack. A
+>   `String[8] argv` pairs with `api.args_split(args, &argv[0], 8)`.
+> - **The tokens are borrowed.** They — and the raw `args` — point into a
+>   temporary packet buffer that the server reuses the moment your handler
+>   returns. Never stash a token in a global and read it on a later call; copy
+>   what you need first.
 
 ### Registering Packet Hooks
 
@@ -1175,6 +1185,171 @@ fn int my_thread(void* arg) {
 ```
 
 See `server_advertiser.c3` for a complete real-world example of this pattern.
+
+## Common Crashes (and How to Avoid Them)
+
+Most plugin crashes aren't compiler errors — the plugin builds cleanly and then
+takes the server down at runtime. These are the ones that bite people most
+often. (Every one was hit by a real Rock-Paper-Scissors plugin during
+development, and none of them showed up at compile time.)
+
+### 1. Don't store borrowed argument slices
+
+Your handler's `String args` — and every token `api.args_split` writes out — is
+a **borrowed sub-slice of a temporary packet buffer**. It is valid *only for the
+duration of the handler call*. The server reuses that buffer for the next packet
+as soon as your handler returns.
+
+```c3
+String pending_choice;   // global
+
+fn void cmd_rps(void* c, String args) {
+    String[2] argv;
+    int n = api.args_split(args, &argv[0], 2);
+    pending_choice = argv[0];   // BUG: a borrowed slice escapes the call.
+    // The next packet from ANY client overwrites that buffer, so a later
+    // read of pending_choice sees garbage — or crashes.
+}
+```
+
+If you need a value after the call returns, **copy it into storage you own** —
+reduce it to a primitive (an `int`, a single `char`), or copy the bytes into a
+fixed buffer:
+
+```c3
+char[64] saved_name_buf;
+int      saved_name_len;
+
+fn int store_str(char* buf, int cap, String s) {
+    int n = (int)s.len;
+    if (n > cap) n = cap;
+    for (int i = 0; i < n; i++) buf[i] = s[i];
+    return n;
+}
+
+// at call time:
+saved_name_len = store_str(&saved_name_buf[0], 64, api.client_display_name(c));
+// later (any call): String saved = (String)saved_name_buf[0..saved_name_len - 1];
+```
+
+The same lifetime rule applies to the Strings returned by
+`api.client_display_name`, `client_get_showname`, `client_get_char_name`, and
+`area_get_name`: they point into the server's own storage and are fine to use
+immediately, but if you stash one and the client changes character or
+disconnects, it dangles. Copy it if it must outlive the call.
+
+### 2. `args_split`'s `max` must match your buffer size
+
+`args_split(args, &buf[0], max)` writes up to `max` tokens into `buf`. The server
+can't see how big `buf` is, so if `max` is larger than your array it writes past
+the end and corrupts the stack.
+
+```c3
+String[2] argv;
+api.args_split(args, &argv[0], 8);   // BUG: up to 8 tokens into a 2-slot buffer
+api.args_split(args, &argv[0], 2);   // correct: max == buffer length
+```
+
+### 3. `!!` on an optional aborts the whole process
+
+`to_int()` and the other `to_*` parsers return an **optional** — empty when the
+input isn't a number. Unwrapping an empty optional with `!!` *panics and aborts
+the entire server*. Never use `!!` on player-supplied input; use `??` with a
+fallback and validate:
+
+```c3
+int uid = argv[0].to_int() ?? -1;   // safe: -1 on bad input
+if (uid < 0) { api.client_send_msg(c, "Invalid UID."); return; }
+```
+
+Optionals also propagate *outward* through an expression. If you write
+`string::format(..., argv[0].to_int())`, the bad-int optional makes the whole
+`format` call optional, and a trailing `!!` will abort on bad input just the
+same. Parse and validate first, then format.
+
+### 4. `find_client` returns null for offline UIDs
+
+`api.find_client(uid)` returns `null` when nobody with that UID is online. The
+server's client wrappers guard against a null client pointer — they return a
+harmless sentinel (`-1`, `false`, or `""`) instead of crashing — but you should
+still null-check, because *acting* on a player who isn't there is a logic bug:
+you'd silently message no one, or treat `-1` as if it were a real UID.
+
+```c3
+void* t = api.find_client(uid);
+if (t == null) { api.client_send_msg(c, "Player not found."); return; }
+api.client_send_msg(t, "hi");        // safe — t is a real, online client
+```
+
+> Older server builds did **not** null-guard these wrappers, so the same null
+> would crash there. Null-checking in your plugin keeps it correct (and
+> crash-free) across server versions.
+
+## Timers Without Threads (the packet-hook pattern)
+
+Plugins often want time-based behavior: expire a pending challenge, end a round
+after N seconds, nudge idle players. The obvious approach — spawn a thread that
+sleeps — runs straight into the temp-allocator-across-`dlopen` segfault from
+[Threading in Plugins](#threading-in-plugins).
+
+The robust alternative is to **drive time from a packet hook** instead of a
+thread. Hooks run on the server's own packet threads — the same threads that run
+your command handlers — so the temp allocator behaves normally there. Hook a
+frequent packet such as `MS` (sent on every IC message) and check the clock each
+time it fires:
+
+```c3
+import std::time;
+
+const long TIMEOUT_US = 60_000_000;   // 60 seconds, in microseconds
+
+bool      pending      = false;
+long      started_us   = 0;
+int       pending_area = 0;
+char[160] expiry_buf;                 // message pre-built on the command thread
+int       expiry_len   = 0;
+
+fn void start_something(void* c) {
+    pending      = true;
+    started_us   = (long)time::now();
+    pending_area = api.client_get_area(c);
+    // Build any string the hook will need NOW (a command handler runs on a
+    // server thread, so the temp allocator is safe) and copy it into a buffer
+    // you own. The hook then only has to broadcast those bytes.
+    String msg = string::tformat("The challenge expired — nobody joined in time.");
+    expiry_len = store_str(&expiry_buf[0], 160, msg);
+}
+
+fn bool on_ic_message(void* c, void* pkt) {
+    if (pending && expiry_len > 0) {
+        if ((long)time::now() - started_us > TIMEOUT_US) {
+            pending = false;
+            api.broadcast_area_msg(pending_area, (String)expiry_buf[0..expiry_len - 1]);
+        }
+    }
+    return false;   // never consume the IC message
+}
+```
+
+Register the hook in `init`:
+
+```c3
+api.register_hook("MS", &on_ic_message, "My Plugin");
+```
+
+Two things to keep in mind:
+
+- **The timer only advances when a packet arrives.** An `MS` hook ticks on each
+  IC message, so a perfectly silent room won't fire the timeout until someone
+  speaks. That's usually fine — nobody's waiting in an empty room — but if you
+  need it to fire regardless of chatter, also hook `CH` (the client keepalive),
+  which clients send periodically even while idle.
+- **Pre-building strings on the command thread (above) sidesteps the temp
+  allocator in the hook entirely.** Calling `string::tformat` directly inside a
+  hook is also fine in practice (hooks run on server threads, not plugin-spawned
+  ones — the `music_logger` and `bg_scheduler` examples above format strings in
+  their hooks), but the pre-build pattern is the belt-and-suspenders version and
+  the safest thing to teach.
 
 ## Reading Config Files
 

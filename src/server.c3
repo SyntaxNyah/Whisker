@@ -752,6 +752,7 @@ fn void _api_area_set_song(int area_id, String song, int player_uid) {
 // Handles all cleanup: char release, player counts, CM removal,
 // area reset, char re-take, area state sync, and ARUP broadcast.
 fn void _api_force_move(void* c, int new_area_id) {
+    if (c == null) return;
     client::Client* target = (client::Client*)c;
     Server* srv = _plugin_srv;
 
@@ -787,48 +788,64 @@ fn void _api_force_move(void* c, int new_area_id) {
 }
 
 // -- Client operations --
+//
+// Every wrapper that takes a plugin-supplied client pointer guards against
+// null first: api.find_client() returns null for an offline UID, and a plugin
+// that passes that result straight back in must never crash the server. This
+// mirrors the area-id bounds checks the area wrappers already do.
 
 fn void _api_client_send_msg(void* c, String msg) {
+    if (c == null) return;
     ((client::Client*)c).send_server_message(msg);
 }
 
 fn void _api_client_send_raw(void* c, String data) {
+    if (c == null) return;
     ((client::Client*)c).send_raw(data);
 }
 
 fn int _api_client_get_uid(void* c) {
+    if (c == null) return -1;
     return ((client::Client*)c).uid;
 }
 
 fn int _api_client_get_area(void* c) {
+    if (c == null) return -1;
     return ((client::Client*)c).area_id;
 }
 
 fn bool _api_client_is_mod(void* c) {
+    if (c == null) return false;
     return ((client::Client*)c).is_moderator();
 }
 
 fn String _api_client_display_name(void* c) {
+    if (c == null) return "";
     return ((client::Client*)c).display_name();
 }
 
 fn int _api_client_get_char_id(void* c) {
+    if (c == null) return -1;
     return ((client::Client*)c).char_id;
 }
 
 fn String _api_client_get_showname(void* c) {
+    if (c == null) return "";
     return ((client::Client*)c).showname;
 }
 
 fn String _api_client_get_char_name(void* c) {
+    if (c == null) return "";
     return ((client::Client*)c).char_name;
 }
 
 fn bool _api_client_is_joined(void* c) {
+    if (c == null) return false;
     return ((client::Client*)c).joined;
 }
 
 fn void _api_client_set_position(void* c, String pos) {
+    if (c == null) return;
     ((client::Client*)c).position = pos;
 }
 
@@ -853,30 +870,36 @@ fn int _api_get_area_player_count(int area_id) {
 }
 
 fn String _api_client_get_ipid(void* c) {
+    if (c == null) return "";
     return ((client::Client*)c).ipid;
 }
 
 fn String _api_packet_get_field(void* pkt, int index) {
+    if (pkt == null) return "";
     protocol::Packet* p = (protocol::Packet*)pkt;
     if (index < 0 || index >= (int)p.field_count) return "";
     return p.fields[index];
 }
 
 fn int _api_packet_get_field_count(void* pkt) {
+    if (pkt == null) return 0;
     return (int)((protocol::Packet*)pkt).field_count;
 }
 
 fn void _api_client_kick(void* c) {
+    if (c == null) return;
     client::Client* target = (client::Client*)c;
     target.send_raw(protocol::build("KK", { "Kicked by plugin." }));
     target.connected = false;
 }
 
 fn void _api_client_mute(void* c) {
+    if (c == null) return;
     ((client::Client*)c).is_muted = true;
 }
 
 fn void _api_client_unmute(void* c) {
+    if (c == null) return;
     ((client::Client*)c).is_muted = false;
 }
 
