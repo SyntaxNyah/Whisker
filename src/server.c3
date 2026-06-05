@@ -944,6 +944,24 @@ fn int _api_args_split(String input, String* out, int max) {
     return n;
 }
 
+// ASCII-lowercase `input` into the caller-provided `out` buffer (up to `max`
+// bytes) and return the number of bytes written. Only A–Z are shifted; every
+// other byte — digits, punctuation, UTF-8 continuation bytes — is copied
+// unchanged. Like _api_args_split this allocates nothing: the lowercased text
+// lives in the plugin's own buffer, so it stays valid for as long as the plugin
+// keeps it, with no temp-allocator String crossing the dlopen boundary.
+fn int _api_to_lower(String input, char* out, int max) {
+    if (out == null || max <= 0) return 0;
+    int len = (int)input.len;
+    int n = len < max ? len : max;
+    for (int i = 0; i < n; i++) {
+        char ch = input[i];
+        if (ch >= 'A' && ch <= 'Z') ch += 'a' - 'A';
+        out[i] = ch;
+    }
+    return n;
+}
+
 // ============================================================
 // Build the fully populated PluginAPI
 // ============================================================
@@ -999,5 +1017,6 @@ fn plugin::PluginAPI build_plugin_api(Server* srv) {
         .area_set_lock         = &_api_area_set_lock,
         .area_invite           = &_api_area_invite,
         .args_split            = &_api_args_split,
+        .to_lower              = &_api_to_lower,
     };
 }

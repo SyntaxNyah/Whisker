@@ -176,6 +176,15 @@ alias ApiAreaInviteFn          = fn void(int area_id, int uid);
 // Fills `out` (a caller-provided String buffer) and returns the token count.
 alias ApiArgsSplitFn           = fn int(String args, String* out, int max);
 
+// ASCII lower-casing — saves plugins from hand-rolling the `'A'..'Z' -> +32`
+// loop just to compare user input case-insensitively. Like args_split it writes
+// into a buffer the plugin owns (rather than returning an allocated String), so
+// the result has no lifetime tied to the server's temp allocator. Copies `s`
+// into `out` with every A–Z byte shifted to a–z, capped at `max` bytes, and
+// returns how many bytes were written. Non-letters — digits, punctuation, and
+// UTF-8 multibyte bytes — are copied through unchanged.
+alias ApiToLowerFn             = fn int(String s, char* out, int max);
+
 // ============================================================
 // Plugin API — passed to plugins during init
 // ============================================================
@@ -243,6 +252,10 @@ struct PluginAPI {
     // Appended after the v2 block — see the ABI note above. Existing
     // compiled plugins never read this field, so they keep working.
     ApiArgsSplitFn           args_split;
+
+    // Appended after args_split — same append-only ABI rule. Plugins compiled
+    // before to_lower existed stop reading at args_split and never touch it.
+    ApiToLowerFn             to_lower;
 }
 
 // ============================================================

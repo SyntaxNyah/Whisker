@@ -233,6 +233,39 @@ string by hand instead — `args_split` is a convenience, not a requirement.
 >   returns. Never stash a token in a global and read it on a later call; copy
 >   what you need first.
 
+### Lower-casing text (`to_lower`)
+
+Comparing player input usually means ignoring case — `Rock`, `rock`, and `ROCK`
+should all match. Rather than hand-rolling the `'A'..'Z'` shift every time, the
+API gives you an ASCII lower-caser that works like `args_split`: it writes into
+a buffer **you** own and returns the byte count, so there's no allocated string
+whose lifetime you have to track.
+
+```c3
+fn void cmd_choose(void* c, String args) {
+    String[1] argv;
+    if (api.args_split(args, &argv[0], 1) < 1) return;
+
+    // Lower-case the whole word once, then compare case-insensitively.
+    char[16] buf;
+    int n = api.to_lower(argv[0], &buf[0], 16);
+    String choice = (String)buf[0..n - 1];
+
+    if (choice == "rock" || choice == "r") {
+        api.client_send_msg(c, "You picked rock!");
+    }
+}
+```
+
+`to_lower(s, out, max)` copies `s` into `out` with every `A`–`Z` shifted to
+`a`–`z` and returns how many bytes it wrote (never more than `max`). Bytes that
+aren't ASCII letters — digits, punctuation, UTF-8 multibyte sequences — are
+copied through untouched, so it won't mangle non-English shownames; it just
+doesn't case-fold them. The same two cautions as `args_split` apply: **`max`
+must not exceed your buffer length**, and the returned `String` view is only
+valid while `buf` is in scope — copy it into your own storage if you need it on
+a later call.
+
 ### Registering Packet Hooks
 
 ```c3
@@ -310,6 +343,9 @@ api.client_unmute(c)                     // Unmute IC chat
 
 // Command arguments
 api.args_split(args, &buf[0], max)       // Quote-aware split into buf (String[]); returns token count
+
+// String helpers
+api.to_lower(s, &buf[0], max)            // ASCII-lowercase s into buf (char[]); returns bytes written
 ```
 
 ## Example Plugins
@@ -395,6 +431,7 @@ struct PluginAPI {
     // Appended after v2 — see "Version Compatibility". Old plugins that
     // stop at area_invite stay ABI-compatible; this field is just ignored.
     fn int(String, String*, int) args_split;
+    fn int(String, char*, int)   to_lower;
 }
 
 PluginAPI* api;
@@ -517,6 +554,7 @@ struct PluginAPI {
     // Appended after v2 — see "Version Compatibility". Old plugins that
     // stop at area_invite stay ABI-compatible; this field is just ignored.
     fn int(String, String*, int) args_split;
+    fn int(String, char*, int)   to_lower;
 }
 
 PluginAPI* api;
@@ -1546,7 +1584,10 @@ One more field was appended later, the same backwards-compatible way:
 `args_split` (a quote-aware argument tokenizer — see
 [Parsing command arguments](#parsing-command-arguments)), bringing the total to
 **47**. Plugins compiled before it was added stop at `area_invite` and simply
-never read it, so they keep working untouched.
+never read it, so they keep working untouched. A later field, `to_lower` (an
+ASCII lower-caser — see [Lower-casing text](#lower-casing-text-to_lower)), was
+appended the same way, bringing the total to **48**; plugins that predate it
+stop at `args_split` and never read it.
 
 **What this unlocks:** With the v2 API, you can now build auto-moderators,
 spam filters, area lockdown systems, player count monitors, welcome-back

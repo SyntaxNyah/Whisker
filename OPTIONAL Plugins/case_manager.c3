@@ -106,6 +106,7 @@ alias AreaGetLockFn        = fn int(int);
 alias AreaSetLockFn        = fn void(int, int);
 alias AreaInviteFn         = fn void(int, int);
 alias ArgsSplitFn          = fn int(String, String*, int);
+alias ToLowerFn            = fn int(String, char*, int);
 
 struct PluginAPI {
     // Registration
@@ -162,6 +163,7 @@ struct PluginAPI {
     AreaSetLockFn         area_set_lock;
     AreaInviteFn          area_invite;
     ArgsSplitFn           args_split;  // appended — see server's plugin.c3
+    ToLowerFn             to_lower;    // appended after args_split — same ABI rule
 }
 
 // ============================================================

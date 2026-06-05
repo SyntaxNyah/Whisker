@@ -83,10 +83,11 @@ The plugin system is the answer to AO server fork fragmentation. Instead of
 forking the whole server to add features, write a plugin. Ship it separately.
 Everyone benefits.
 
-The Plugin API exposes 47 function pointers: commands, packet hooks with field
+The Plugin API exposes 48 function pointers: commands, packet hooks with field
 access, client operations (messaging, kick, mute, IPID), area management
 (lock/unlock, backgrounds, invites, status), server-wide broadcasting,
-player count queries, and quote-aware argument splitting (`args_split`). The
+player count queries, quote-aware argument splitting (`args_split`), and ASCII
+lower-casing (`to_lower`). The
 extended API is backwards-compatible — every addition is appended at the end of
 the struct, so old plugins keep working without recompilation. See the dev guide
 for the full reference.
