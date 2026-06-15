@@ -199,22 +199,38 @@ fn PluginInfo whisker_plugin_info() @export("whisker_plugin_info") {
     };
 }
 
+// Temp-allocator scope wrappers. Command handlers run on the server's
+// per-client threads, where a plugin's own temp allocator is not initialised,
+// so the string::tformat / dstring::temp calls in the handlers below would
+// panic ("Use @pool_init()..."). Each wrapper opens a temp-allocator scope
+// around its handler; the handler logic itself is unchanged.
+const usz POOL = 1024 * 64;
+
+fn void w_cm(void* c, String a)        { @pool_init(mem, POOL) { cmd_cm(c, a); }; }
+fn void w_uncm(void* c, String a)      { @pool_init(mem, POOL) { cmd_uncm(c, a); }; }
+fn void w_area_kick(void* c, String a) { @pool_init(mem, POOL) { cmd_area_kick(c, a); }; }
+fn void w_play(void* c, String a)      { @pool_init(mem, POOL) { cmd_play(c, a); }; }
+fn void w_status(void* c, String a)    { @pool_init(mem, POOL) { cmd_status(c, a); }; }
+fn void w_forcepos(void* c, String a)  { @pool_init(mem, POOL) { cmd_forcepos(c, a); }; }
+fn void w_uninvite(void* c, String a)  { @pool_init(mem, POOL) { cmd_uninvite(c, a); }; }
+
 fn bool whisker_plugin_init(PluginAPI* plugin_api) @export("whisker_plugin_init") {
     api = plugin_api;
 
-    api.register_command("cm", &cmd_cm, 0,
+    // Handlers wrapped in @pool_init — see wrappers above.
+    api.register_command("cm", &w_cm, 0,
         "Become CM or promote [uid]", "Case Manager");
-    api.register_command("uncm", &cmd_uncm, 0,
+    api.register_command("uncm", &w_uncm, 0,
         "Remove CM from self or [uid|all]", "Case Manager");
-    api.register_command("area_kick", &cmd_area_kick, 0,
+    api.register_command("area_kick", &w_area_kick, 0,
         "Kick player from area to lobby", "Case Manager");
-    api.register_command("play", &cmd_play, 0,
+    api.register_command("play", &w_play, 0,
         "Play a song in the area", "Case Manager");
-    api.register_command("status", &cmd_status, 0,
+    api.register_command("status", &w_status, 0,
         "Set area status (idle, casing, rp, etc.)", "Case Manager");
-    api.register_command("forcepos", &cmd_forcepos, 0,
+    api.register_command("forcepos", &w_forcepos, 0,
         "Force a player's position", "Case Manager");
-    api.register_command("uninvite", &cmd_uninvite, 0,
+    api.register_command("uninvite", &w_uninvite, 0,
         "Remove player from area invite list", "Case Manager");
 
     io::printn("[case_manager] Case Manager plugin loaded (7 commands).");

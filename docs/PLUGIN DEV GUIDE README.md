@@ -1384,14 +1384,33 @@ C3 runtime, whose temp allocator is thread-local and only initialised on the
 packet, **and lifecycle** handlers are all invoked on the thread that owns the
 client, *not* the main thread. So `dstring::temp()` and `string::tformat()`
 **panic** there too (*"Use @pool_init() to enable the temp allocator on a new
-thread"*) — this is **not** limited to threads you spawn yourself. The fix:
-**build wire data and messages into fixed `char[]` buffers with manual
-formatting**, exactly as `player_list.c3` does (`put_str` / `put_int` /
-`put_escaped`), then hand the slice to the API. No allocator, no TLS — safe on
-every thread and platform. (Examples elsewhere in this guide that call
-`string::tformat` inside a handler assume the allocator is available; treat that
-as shorthand and prefer the fixed-buffer pattern for anything you actually ship,
-especially on Windows where it reliably panics.)
+thread"*) — this is **not** limited to threads you spawn yourself. There are two
+fixes, both used by the shipped plugins:
+
+1. **Avoid the temp allocator — build into fixed `char[]` buffers** with manual
+   formatting, as `player_list.c3` does (`put_str` / `put_int` / `put_escaped`),
+   then hand the slice to the API. No allocator, no TLS — bulletproof.
+2. **Open a temp-allocator scope yourself with `@pool_init`.** Wrap the handler
+   body (or register a thin wrapper) in `@pool_init(mem, 64 * 1024) { ... };` —
+   inside that scope `string::tformat` / `dstring::temp` work normally, because
+   `@pool_init` *creates* a temp allocator for the current thread (using `mem`,
+   the heap, as the backing store) and tears it down at scope end. This is what
+   `casing.c3` and `case_manager.c3` do (see the `w_*` wrappers there), and it
+   lets you keep handler code that already uses `tformat`:
+
+   ```c3
+   // Thin wrapper registered instead of the bare handler:
+   fn void w_doc(void* c, String a) { @pool_init(mem, 64 * 1024) { cmd_doc(c, a); }; }
+   // ...
+   api.register_command("doc", &w_doc, 0, "Get/set case document", "Casing");
+   ```
+
+   (`@pool_init` and `mem` are `@builtin` — no import needed. Use option 2 only on
+   the server's threads, as here; on threads you spawn yourself, see Hazard 2.)
+
+Examples elsewhere in this guide that call `string::tformat` directly inside a
+handler assume such a scope is in place — wrap them per option 2 (or convert to
+option 1) for anything you actually ship.
 
 **Hazard 2 — threads your plugin spawns** (e.g., a background heartbeat). Same
 ban on the temp allocator, and you also shouldn't rely on C3 runtime services at

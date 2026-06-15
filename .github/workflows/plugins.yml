@@ -18,14 +18,11 @@ name: Build Plugins
 on:
   push:
     branches: ["**"]
-    # Only react to plugin SOURCE changes. The job's own commit only touches
-    # the Linux/ and Windows/ binary folders, which are NOT listed here, so it
-    # can never retrigger itself (the [skip ci] tag below is a second guard).
-    paths:
-      - "OPTIONAL Plugins/*.c3"
-      - "OPTIONAL Plugins/**/project.json"
-      - "OPTIONAL Plugins/build_plugins.sh"
-      - ".github/workflows/plugins.yml"
+    # Runs on EVERY push so the Linux .so (and Windows .dll) are rebuilt every
+    # CI run. c3c builds are reproducible, so the commit step below only commits
+    # when a plugin's source actually changed (identical bytes => nothing to
+    # commit => no churn). The auto-commit is tagged [skip ci], which stops it
+    # from re-triggering this workflow.
   workflow_dispatch:
 
 permissions:

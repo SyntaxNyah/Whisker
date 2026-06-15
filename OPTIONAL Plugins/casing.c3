@@ -265,53 +265,87 @@ fn PluginInfo whisker_plugin_info() @export("whisker_plugin_info") {
     };
 }
 
+// ============================================================
+// Temp-allocator scope wrappers
+// ============================================================
+//
+// Command/hook handlers run on the server's per-client threads, where a
+// plugin's OWN temp allocator is not initialised — so the string::tformat /
+// dstring::temp calls in the handlers below would panic ("Use @pool_init()...").
+// These thin wrappers open a temp-allocator scope (@pool_init) around each
+// handler so its temp usage works; the handler logic itself is unchanged.
+// (player_list.c3 instead avoids the temp allocator entirely — either is fine.)
+
+const usz POOL = 1024 * 64;
+
+fn void w_testify(void* c, String a)        { @pool_init(mem, POOL) { cmd_testify(c, a); }; }
+fn void w_examine(void* c, String a)        { @pool_init(mem, POOL) { cmd_examine(c, a); }; }
+fn void w_pause(void* c, String a)          { @pool_init(mem, POOL) { cmd_pause(c, a); }; }
+fn void w_testimony(void* c, String a)      { @pool_init(mem, POOL) { cmd_testimony(c, a); }; }
+fn void w_add(void* c, String a)            { @pool_init(mem, POOL) { cmd_add(c, a); }; }
+fn void w_update(void* c, String a)         { @pool_init(mem, POOL) { cmd_update(c, a); }; }
+fn void w_delete(void* c, String a)         { @pool_init(mem, POOL) { cmd_delete(c, a); }; }
+fn void w_doc(void* c, String a)            { @pool_init(mem, POOL) { cmd_doc(c, a); }; }
+fn void w_cleardoc(void* c, String a)       { @pool_init(mem, POOL) { cmd_cleardoc(c, a); }; }
+fn void w_need(void* c, String a)           { @pool_init(mem, POOL) { cmd_need(c, a); }; }
+fn void w_notecard(void* c, String a)       { @pool_init(mem, POOL) { cmd_notecard(c, a); }; }
+fn void w_notecardreveal(void* c, String a) { @pool_init(mem, POOL) { cmd_notecardreveal(c, a); }; }
+fn void w_notecardclear(void* c, String a)  { @pool_init(mem, POOL) { cmd_notecardclear(c, a); }; }
+fn void w_blockwtce(void* c, String a)      { @pool_init(mem, POOL) { cmd_blockwtce(c, a); }; }
+fn void w_unblockwtce(void* c, String a)    { @pool_init(mem, POOL) { cmd_unblockwtce(c, a); }; }
+fn void w_judgelog(void* c, String a)       { @pool_init(mem, POOL) { cmd_judgelog(c, a); }; }
+
+fn bool w_ms(void* c, void* p) { bool r = false; @pool_init(mem, POOL) { r = on_ic_message(c, p); }; return r; }
+fn bool w_rt(void* c, void* p) { bool r = false; @pool_init(mem, POOL) { r = on_rt_packet(c, p); }; return r; }
+fn bool w_hp(void* c, void* p) { bool r = false; @pool_init(mem, POOL) { r = on_hp_packet(c, p); }; return r; }
+
 fn bool whisker_plugin_init(PluginAPI* plugin_api) @export("whisker_plugin_init") {
     api = plugin_api;
 
-    // -- Testimony --
-    api.register_command("testify", &cmd_testify, 0,
+    // -- Testimony -- (handlers wrapped in @pool_init — see wrappers above)
+    api.register_command("testify", &w_testify, 0,
         "Start recording testimony (CM/mod)", "Casing");
-    api.register_command("examine", &cmd_examine, 0,
+    api.register_command("examine", &w_examine, 0,
         "Begin cross-examination", "Casing");
-    api.register_command("pause", &cmd_pause, 0,
+    api.register_command("pause", &w_pause, 0,
         "Stop recording/playback (CM/mod)", "Casing");
-    api.register_command("testimony", &cmd_testimony, 0,
+    api.register_command("testimony", &w_testimony, 0,
         "View recorded testimony", "Casing");
-    api.register_command("add", &cmd_add, 0,
+    api.register_command("add", &w_add, 0,
         "Insert statement after current (CM/mod)", "Casing");
-    api.register_command("update", &cmd_update, 0,
+    api.register_command("update", &w_update, 0,
         "Replace current statement (CM/mod)", "Casing");
-    api.register_command("delete", &cmd_delete, 0,
+    api.register_command("delete", &w_delete, 0,
         "Delete current statement (CM/mod)", "Casing");
 
     // -- Case utility --
-    api.register_command("doc", &cmd_doc, 0,
+    api.register_command("doc", &w_doc, 0,
         "Get/set case document", "Casing");
-    api.register_command("cleardoc", &cmd_cleardoc, 0,
+    api.register_command("cleardoc", &w_cleardoc, 0,
         "Clear case document (CM/mod)", "Casing");
-    api.register_command("need", &cmd_need, 0,
+    api.register_command("need", &w_need, 0,
         "Broadcast case advertisement (CM/mod)", "Casing");
 
     // -- Notecards --
-    api.register_command("notecard", &cmd_notecard, 0,
+    api.register_command("notecard", &w_notecard, 0,
         "Write a hidden notecard", "Casing");
-    api.register_command("notecardreveal", &cmd_notecardreveal, 0,
+    api.register_command("notecardreveal", &w_notecardreveal, 0,
         "Reveal all notecards (CM/mod)", "Casing");
-    api.register_command("notecardclear", &cmd_notecardclear, 0,
+    api.register_command("notecardclear", &w_notecardclear, 0,
         "Clear your notecard", "Casing");
 
     // -- WT/CE control --
-    api.register_command("blockwtce", &cmd_blockwtce, 0,
+    api.register_command("blockwtce", &w_blockwtce, 0,
         "Block player from WT/CE controls (CM/mod)", "Casing");
-    api.register_command("unblockwtce", &cmd_unblockwtce, 0,
+    api.register_command("unblockwtce", &w_unblockwtce, 0,
         "Unblock player WT/CE controls (CM/mod)", "Casing");
-    api.register_command("judgelog", &cmd_judgelog, 0,
+    api.register_command("judgelog", &w_judgelog, 0,
         "View recent judge actions (CM/mod)", "Casing");
 
     // -- Hooks --
-    api.register_hook("MS", &on_ic_message, "Casing");
-    api.register_hook("RT", &on_rt_packet,  "Casing");
-    api.register_hook("HP", &on_hp_packet,  "Casing");
+    api.register_hook("MS", &w_ms, "Casing");
+    api.register_hook("RT", &w_rt,  "Casing");
+    api.register_hook("HP", &w_hp,  "Casing");
 
     io::printn("[casing] Casing plugin loaded (16 commands, 3 hooks).");
     return true;

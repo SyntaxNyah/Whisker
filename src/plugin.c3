@@ -49,15 +49,40 @@ extern fn char* dlerror() @if(!env::WIN32);
 
 const int RTLD_NOW = 2;
 
-// Directory scanning — Windows
-extern fn void* win_popen(char* cmd, char* mode) @cname("_popen") @if(env::WIN32);
-extern fn int win_pclose(void* stream) @cname("_pclose") @if(env::WIN32);
+// Directory scanning — Windows (Win32 FindFirstFile).
+// We deliberately do NOT use _popen("dir")/_pclose here: under the debug CRT
+// (ucrtbased) _pclose can trip a breakpoint and take the whole server down
+// during the plugin scan. FindFirstFile enumerates the directory directly —
+// no child process, no pipe, no CRT pclose.
+const int MAX_PATH_LEN = 260;
 
-// Directory scanning — POSIX
+struct Win32FileTime {
+    uint low;
+    uint high;
+}
+
+// Mirrors WIN32_FIND_DATAA exactly (field order + sizes must match).
+struct Win32FindDataA {
+    uint               attributes;
+    Win32FileTime      creation_time;
+    Win32FileTime      last_access_time;
+    Win32FileTime      last_write_time;
+    uint               file_size_high;
+    uint               file_size_low;
+    uint               reserved0;
+    uint               reserved1;
+    char[MAX_PATH_LEN] file_name;        // cFileName (null-terminated)
+    char[14]           alternate_name;   // cAlternateFileName
+}
+
+extern fn void* find_first_file_a(char* pattern, Win32FindDataA* data) @cname("FindFirstFileA") @if(env::WIN32);
+extern fn int   find_next_file_a(void* handle, Win32FindDataA* data) @cname("FindNextFileA") @if(env::WIN32);
+extern fn int   find_close(void* handle) @cname("FindClose") @if(env::WIN32);
+
+// Directory scanning — POSIX (popen("ls") works fine here)
 extern fn void* popen(char* cmd, char* mode) @if(!env::WIN32);
 extern fn int pclose(void* stream) @if(!env::WIN32);
-
-extern fn char* fgets(char* buf, int n, void* stream);
+extern fn char* fgets(char* buf, int n, void* stream) @if(!env::WIN32);
 
 // ============================================================
 // Plugin export function pointer types
@@ -370,47 +395,51 @@ fn PluginManager new_manager() {
 fn void load_all(PluginManager* pm, PluginAPI* api, String directory) {
     io::printfn("[plugins] Scanning '%s' for plugins...", directory);
 
-    // Use a shell command to list plugin files in the directory.
-    // Windows: dir /b *.dll    POSIX: ls -1 *.so
+    // List plugin files in the directory. Windows: FindFirstFile *.dll
+    // (no child process). POSIX: ls -1 *.so via popen.
     $if env::WIN32:
-        String cmd = string::tformat("dir /b \"%s\\*.dll\" 2>nul", directory);
-        void* pipe = win_popen(cmd.ptr, "r".ptr);
+        Win32FindDataA find_data;
+        // Win32 needs a null-terminated pattern — tformat_zstr (not tformat,
+        // which leaves the slice unterminated and made FindFirstFile fail).
+        ZString pattern = string::tformat_zstr("%s\\*.dll", directory);
+        void* handle = find_first_file_a((char*)pattern, &find_data);
+        if ((iptr)handle != -1) { // INVALID_HANDLE_VALUE
+            char[512] path_buf;
+            do {
+                usz len = 0;
+                while (len < MAX_PATH_LEN - 1 && find_data.file_name[len] != 0) len++;
+                if (len >= 4) {
+                    // FindFirstFile gives just the name — build "<dir>\<name>"
+                    // into a null-terminated buffer for LoadLibraryA.
+                    usz pl = 0;
+                    foreach (char ch : directory) { if (pl < 500) path_buf[pl++] = ch; }
+                    if (pl < 510) path_buf[pl++] = '\\';
+                    for (usz i = 0; i < len && pl < 511; i++) path_buf[pl++] = find_data.file_name[i];
+                    path_buf[pl] = 0; // null-terminate for C interop
+                    load_single(pm, api, (String)path_buf[0..pl - 1]);
+                }
+            } while (find_next_file_a(handle, &find_data) != 0);
+            find_close(handle);
+        }
     $else
         String cmd = string::tformat("ls -1 \"%s/\"*.so 2>/dev/null", directory);
         void* pipe = popen(cmd.ptr, "r".ptr);
-    $endif
-
-    if (pipe != null) {
-        char[256] name_buf;
-        while (fgets(&name_buf[0], 256, pipe) != null) {
-            // Trim trailing newline/whitespace and null-terminate.
-            // dlopen/LoadLibrary read C strings (until \0), not C3
-            // slices, so the buffer must be properly terminated.
-            usz len = 0;
-            while (len < 255 && name_buf[len] != 0 && name_buf[len] != '\n' && name_buf[len] != '\r') len++;
-            if (len < 4) continue;
-            name_buf[len] = 0; // Null-terminate for C interop
-
-            String name = (String)name_buf[0..len - 1];
-
-            // Build full path to the plugin file
-            $if env::WIN32:
-                // dir /b gives just filenames — prepend directory
-                String full_path = string::tformat("%s\\%s", directory, name);
-            $else
-                // ls gives full relative paths (dir/file.so)
-                String full_path = name;
-            $endif
-
-            load_single(pm, api, full_path);
-        }
-
-        $if env::WIN32:
-            win_pclose(pipe);
-        $else
+        if (pipe != null) {
+            char[256] name_buf;
+            while (fgets(&name_buf[0], 256, pipe) != null) {
+                // Trim trailing newline/whitespace and null-terminate.
+                // dlopen reads C strings (until \0), so terminate the buffer.
+                usz len = 0;
+                while (len < 255 && name_buf[len] != 0 && name_buf[len] != '\n' && name_buf[len] != '\r') len++;
+                if (len < 4) continue;
+                name_buf[len] = 0;
+                // ls gives full relative paths (dir/file.so).
+                String full_path = (String)name_buf[0..len - 1];
+                load_single(pm, api, full_path);
+            }
             pclose(pipe);
-        $endif
-    }
+        }
+    $endif
 
     io::printfn("[plugins] %d plugins loaded, %d commands registered, %d hooks registered.",
         pm.plugin_count, pm.command_count, pm.hook_count);
