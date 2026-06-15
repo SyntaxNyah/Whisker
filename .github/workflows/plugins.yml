@@ -18,11 +18,19 @@ name: Build Plugins
 on:
   push:
     branches: ["**"]
-    # Runs on EVERY push so the Linux .so (and Windows .dll) are rebuilt every
-    # CI run. c3c builds are reproducible, so the commit step below only commits
-    # when a plugin's source actually changed (identical bytes => nothing to
-    # commit => no churn). The auto-commit is tagged [skip ci], which stops it
-    # from re-triggering this workflow.
+    # Runs whenever any plugin SOURCE changes — and then rebuilds EVERY plugin
+    # for BOTH platforms (Linux .so as a mandatory step, Windows .dll best
+    # effort). We scope to plugin sources on purpose: the Linux .so build is
+    # byte-reproducible (rebuilding unchanged plugins is a no-op), but the
+    # Windows .dll cross-compile embeds a timestamp, so building on every
+    # unrelated push would re-commit identical-but-different .dll files forever.
+    # The job's own commit only touches the binary folders (not these paths),
+    # and is tagged [skip ci], so it can't retrigger the workflow.
+    paths:
+      - "OPTIONAL Plugins/*.c3"
+      - "OPTIONAL Plugins/**/project.json"
+      - "OPTIONAL Plugins/build_plugins.sh"
+      - ".github/workflows/plugins.yml"
   workflow_dispatch:
 
 permissions:
