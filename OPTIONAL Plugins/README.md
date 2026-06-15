@@ -106,11 +106,23 @@ The pre-built binaries in `Windows/` and `Linux/` are ready to use. If you need 
 **Easiest: let CI do it (no local toolchain needed).** The
 [`Build Plugins`](../.github/workflows/plugins.yml) workflow runs whenever you
 push a change to a plugin's source (`*.c3`, a `project.json`, or
-`build_plugins.sh`). A Linux runner builds every plugin — native `.so` **and**
-cross-compiled `.dll` — and commits the refreshed binaries straight back into
-`Linux/` and `Windows/`. So adding or editing a plugin and pushing is enough;
-the compiled binaries update themselves. (The auto-commit is tagged `[skip ci]`
-and only touches the binary folders, so it never triggers itself.)
+`build_plugins.sh`). A Linux runner builds **every** plugin — native `.so`
+**and** cross-compiled `.dll` (via the MSVC SDK) — and commits the refreshed
+binaries straight back into `Linux/` and `Windows/`. So adding or editing a
+plugin and pushing is enough; the compiled binaries update themselves. (The
+auto-commit is tagged `[skip ci]` and only touches the binary folders, so it
+never triggers itself.)
+
+**Future plugins are picked up automatically.** Both `build_plugins.sh` and the
+CI **auto-discover** plugins — there is no list to maintain. Any subdirectory of
+`OPTIONAL Plugins/` that contains a `project.json` is treated as a plugin (its
+output name matches the folder name by convention). To add a new one:
+
+1. Create `OPTIONAL Plugins/<name>.c3` (the source).
+2. Create `OPTIONAL Plugins/<name>/project.json` (copy an existing one; point
+   `sources-override` at `../<name>.c3` and name the target `<name>`).
+3. Commit and push — CI discovers it, builds `Linux/<name>.so` and
+   `Windows/<name>.dll`, and commits them back. Done.
 
 **Quick rebuild (all plugins, both platforms):**
 ```bash
@@ -144,11 +156,11 @@ cp case_manager.dll /path/to/whisker/plugins/
 
 Each plugin has its own `project.json` in a subdirectory (e.g., `case_manager/project.json`). Key settings:
 - `"type": "dynamic-lib"` — produces a `.so` / `.dll` instead of an executable
-- `"linked-libraries": ["c"]` — links against libc (**required on Linux** to avoid `undefined symbol: atexit`)
+- `"linked-libraries": ["c"]` — links libc (**Linux only**, to avoid `undefined symbol: atexit`). The Windows build does **not** use this: MSVC has no `c.lib` and links its CRT implicitly, so `build_plugins.sh windows` builds the `.dll` with a plain `c3c dynamic-lib` (no `-l c`).
 
-> **Note:** Cross-compiling Linux `.so` files from Windows does **not** produce working
-> binaries. Always build `.so` files natively on your Linux server. Windows `.dll` files
-> can be cross-compiled from Linux without issues.
+> **Cross-compiling notes:**
+> - **Linux `.so` must be built natively on Linux** (with `-l c`). Cross-compiling a `.so` *from Windows* does **not** produce working binaries.
+> - **Windows `.dll` can be cross-compiled from Linux**, but c3c links it against the **MSVC SDK**, which it downloads behind an interactive license prompt. Run `c3c fetch-sdk windows --accept-license` once first (the CI does this automatically), then build **without** `-l c`.
 
 ---
 
