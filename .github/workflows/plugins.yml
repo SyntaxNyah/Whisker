@@ -53,12 +53,12 @@ jobs:
       - name: Verify C3
         run: c3c --version
 
-      # c3c cross-compiles the Windows .dll from Linux by linking against the
-      # mingw-w64 Windows runtime; the bare runner doesn't ship it.
-      - name: Install mingw-w64 (Windows cross-compile toolchain)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y mingw-w64
+      # c3c cross-compiles the Windows .dll from Linux against the MSVC SDK,
+      # which it fetches on first use behind an interactive license prompt CI
+      # can't answer. Pre-fetch it here with the license auto-accepted so the
+      # Windows build step finds it cached and runs non-interactively.
+      - name: Fetch MSVC SDK for Windows cross-compile (accept license)
+        run: c3c fetch-sdk windows --accept-license
 
       # The Linux .so is the artifact that can't be produced any other way, so
       # this step must succeed.
