@@ -53,6 +53,13 @@ jobs:
       - name: Verify C3
         run: c3c --version
 
+      # c3c cross-compiles the Windows .dll from Linux by linking against the
+      # mingw-w64 Windows runtime; the bare runner doesn't ship it.
+      - name: Install mingw-w64 (Windows cross-compile toolchain)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y mingw-w64
+
       # The Linux .so is the artifact that can't be produced any other way, so
       # this step must succeed.
       - name: Build Linux .so
