@@ -59,11 +59,16 @@ build_windows() {
     echo "=== Building plugins for Windows x64 ==="
     for plugin in "${PLUGINS[@]}"; do
         echo "Building $plugin..."
+        # Build from the plugin's own dir (keeps the generated headers/ out of
+        # OPTIONAL Plugins/headers/). NOTE: we do NOT use the project.json here,
+        # because it links libc as "c" — required on Linux, but MSVC (used for
+        # the windows-x64 cross-compile) has no c.lib and links its CRT
+        # implicitly. So build with a plain dynamic-lib and no -l c.
         cd "$SCRIPT_DIR/$plugin"
-        c3c build --target windows-x64
+        c3c dynamic-lib "../$plugin.c3" --target windows-x64 -o "out/$plugin"
         cp "out/$plugin.dll" "$SCRIPT_DIR/Windows/$plugin.dll"
         echo "  -> Windows/$plugin.dll"
-        rm -rf out build
+        rm -rf out build headers
     done
 }
 
