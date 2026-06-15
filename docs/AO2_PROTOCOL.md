@@ -30,6 +30,7 @@ A plain-English guide to every packet in the Attorney Online 2 protocol, as impl
   - [BN — Background](#bn--background)
   - [CharsCheck — Character Availability](#charscheck--character-availability)
   - [ARUP — Area Updates](#arup--area-updates)
+  - [PR / PU — Player List (2.11)](#pr--pu--player-list-211)
   - [LE — Evidence List](#le--evidence-list)
   - [BD / KK / KB — Disconnect Packets](#bd--kk--kb--disconnect-packets)
   - [AUTH — Login Result](#auth--login-result)
@@ -594,6 +595,52 @@ Bulk update about all areas at once. One data field per area.
 | `3` (Lock) | `FREE`, `SPECTATABLE`, or `LOCKED` |
 
 Broadcast to all joined players whenever someone joins, leaves, or area state changes.
+
+### PR / PU -- Player List (2.11)
+
+The live player list shown in the top-left of the 2.11 desktop courtroom (when
+the theme provides the widget). Two packets, both server -> client:
+
+**PR -- Player Register** (add or remove a row)
+
+```
+PR#<uid>#<update_type>#%
+```
+
+| Field | Index | Meaning |
+|-------|-------|---------|
+| uid | 0 | The player's UID (matches the UID used everywhere else) |
+| update_type | 1 | `0` = add the player to the list, `1` = remove them |
+
+**PU -- Player Update** (set one field of an existing row)
+
+```
+PU#<uid>#<data_type>#<data>#%
+```
+
+| Field | Index | Meaning |
+|-------|-------|---------|
+| uid | 0 | Which player this update is for |
+| data_type | 1 | Which field changed (see below) |
+| data | 2 | The new value (escaped like any other field) |
+
+| data_type | Field | Notes |
+|-----------|-------|-------|
+| `0` | OOC name | The player's out-of-character name |
+| `1` | Character | Character folder name (empty while spectating) |
+| `2` | Showname | In-character display name (Whisker does not track this yet) |
+| `3` | Area | The player's current area **index** |
+
+Typical flow: on join the server sends `PR#uid#0#%` followed by the `PU`s that
+populate the row; on a character pick / area move / OOC-name change it sends the
+matching `PU`; on disconnect it sends `PR#uid#1#%`. Clients older than 2.11 don't
+recognise `PR`/`PU` and silently ignore them, so emitting these is always safe.
+
+> **Whisker note:** these packets are **not** sent by the core server. They are
+> emitted by the optional `player_list` plugin (see `OPTIONAL Plugins/`), which
+> is driven by the core's plugin lifecycle hooks. The feature is opt-in by
+> design — drop in the plugin to enable it. Shadow mods (the SHADOW role) are
+> never listed.
 
 ### LE -- Evidence List
 

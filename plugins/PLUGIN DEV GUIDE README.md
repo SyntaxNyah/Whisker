@@ -282,6 +282,98 @@ Hook functions return `bool`:
 - `true` = consume the packet (stop processing)
 - `false` = pass through to next hook / default handler
 
+### Registering Lifecycle Hooks (v3)
+
+Packet hooks are great, but they only fire when a client **sends** a packet.
+That leaves two blind spots:
+
+1. **Disconnects produce no packet.** A socket just closes — so a packet hook
+   can *never* observe a client leaving. Anything tracking "who is here" would
+   accumulate ghosts forever.
+2. **The keepalive is slow.** The desktop client only sends `CH` every ~45
+   seconds, so anything you drive off incoming packets can lag badly in a
+   quiet room.
+
+**Lifecycle hooks** close both gaps. The server calls them *directly* at the
+moments a client joins, leaves, or changes visible state. This is exactly what
+a live player list needs (see the `player_list` plugin in `OPTIONAL Plugins/`),
+but they're useful for anything stateful: join/leave announcers, Discord
+bridges, presence logging, auto-roles, and so on.
+
+```c3
+api.register_lifecycle_hook(hook_fn, plugin_name);
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `hook_fn` | `fn void(void*, int)` | `fn void(void* client, int event)` |
+| `plugin_name` | `String` | Your plugin's name |
+
+One handler receives **every** event — `switch` on the `event` code to tell
+them apart. Unlike packet hooks, lifecycle hooks **never consume**: every
+plugin that registered one sees every event. The event codes (defined in the
+server's `config.c3` as `PLUGIN_EVENT_*`) are:
+
+| Event | Value | Fires when… | Client state when it fires |
+|-------|-------|-------------|----------------------------|
+| `JOIN`   | `0` | A client finished the handshake and is in the courtroom. | UID assigned; character not yet picked (area is the entry area). |
+| `LEAVE`  | `1` | A joined client is disconnecting. | Still fully readable (UID/character/area), not yet removed. |
+| `UPDATE` | `2` | A joined client's character, area, or OOC name changed. | Already updated — read the new value with the `client_*` getters. |
+
+Standalone plugins declare the codes locally to match:
+
+```c3
+const int EVENT_JOIN   = 0;
+const int EVENT_LEAVE  = 1;
+const int EVENT_UPDATE = 2;
+```
+
+Key points:
+
+- **`UPDATE` is a "something changed, re-read me" nudge, not a diff.** It fires
+  on every character pick, area move, and OOC line. Read the current state with
+  `client_get_char_name` / `client_get_area` / `client_get_ooc_name` and compare
+  against your own stored copy so you only act on *real* changes (the OOC-name
+  case fires on every OOC message). See `handle_update` in `player_list.c3`.
+- **`JOIN` fires before a character is chosen.** If you need the character, read
+  it on the following `UPDATE`, not on `JOIN`.
+- **`LEAVE` fires while the client is still intact** — your handler can safely
+  read its UID/character/area and broadcast about it.
+- **Honour hidden clients.** `api.client_is_hidden(c)` is `true` for shadow mods
+  (the SHADOW role, "hidden from player lists"). Skip them in anything public.
+- **No temp allocator here.** Lifecycle hooks run on the client's own server
+  thread, where the plugin's *own* copy of the C3 temp allocator is **not**
+  initialised — so `dstring::temp()` and `string::tformat()` **panic**
+  (*"Use @pool_init()..."*). Build any wire data or message into a fixed
+  `char[]` buffer instead; see the allocator-free `put_str` / `put_int` /
+  `put_escaped` helpers in `player_list.c3`. The same caveat applies to command
+  and packet handlers — see [Threading in Plugins](#threading-in-plugins).
+
+> **In-tree vs standalone:** if you `import whisker::plugin` (in-tree style),
+> `register_lifecycle_hook` and the `client_get_ooc_name` / `client_is_hidden`
+> getters are already on `PluginAPI` — nothing to do. If you use the standalone
+> pattern (your own `PluginAPI` copy), append the three v3 fields to the **end**
+> of your struct exactly as shown in `player_list.c3`. See
+> [Version Compatibility](#version-compatibility).
+
+A minimal example (full worked version is [Example 10](#example-10-joinleave-announcer-lifecycle-hooks-v3)):
+
+```c3
+fn void on_lifecycle(void* c, int event) {
+    // Static strings need no allocator. To include dynamic data (a name, a
+    // count), format into a fixed char[] buffer — do NOT use string::tformat
+    // in a plugin handler (see player_list.c3 and the Threading section).
+    if (event == EVENT_JOIN) {
+        api.broadcast_all_msg("A player connected.");
+    } else if (event == EVENT_LEAVE) {
+        api.broadcast_all_msg("A player disconnected.");
+    }
+}
+
+// in whisker_plugin_init:
+api.register_lifecycle_hook(&on_lifecycle, "My Plugin");
+```
+
 ### Client API (via PluginAPI function pointers)
 
 Client pointers are `void*` in plugin handlers. Use the PluginAPI to interact:
@@ -302,6 +394,8 @@ api.client_is_mod(c)                     // Is authenticated mod? (bool)
 api.client_is_joined(c)                  // Has finished joining? (bool)
 api.client_set_position(c, "def")        // Set courtroom position
 api.client_get_ipid(c)                   // Hashed IP identifier (String)
+api.client_get_ooc_name(c)               // Current OOC name, "" if unset (String)  [v3]
+api.client_is_hidden(c)                  // Hidden from player lists? (SHADOW role) (bool)  [v3]
 
 // Server/Area operations
 api.find_client(uid)                     // Find client by UID (void*)
@@ -1161,6 +1255,114 @@ fn bool on_music(void* c, void* pkt) {
 }
 ```
 
+---
+
+### Example 10: Join/Leave Announcer (lifecycle hooks, v3)
+
+Shows the [lifecycle hook API](#registering-lifecycle-hooks-v3): announce when
+players come and go, and note when someone picks a character — none of which a
+packet hook can do reliably (a disconnect sends no packet). Shadow mods are
+skipped so they stay invisible.
+
+This example omits the `PluginAPI` struct for brevity. Unlike Examples 1–9,
+copy the struct from **`OPTIONAL Plugins/player_list.c3`** — it includes the
+three appended v3 fields (`register_lifecycle_hook`, `client_get_ooc_name`,
+`client_is_hidden`) that this example needs. (The v2-era struct in Example 1 /
+`case_manager.c3` stops at `to_lower` and won't have them.)
+
+```c3
+module announcer;
+
+import std::io;
+
+// ... PluginInfo, alias types, and the FULL PluginAPI struct
+//     (copy from player_list.c3 — it has the v3 fields at the end) ...
+
+// Lifecycle event codes — must match config::PLUGIN_EVENT_* in the server.
+const int EVENT_JOIN   = 0;
+const int EVENT_LEAVE  = 1;
+const int EVENT_UPDATE = 2;
+
+const int MAX_TRACK = 1024;
+
+// Remember each listed player's last character so we only announce *real*
+// character changes (UPDATE also fires on area moves and every OOC line).
+struct Seen { bool used; int uid; char[64] character; }
+Seen[MAX_TRACK] seen;
+PluginAPI* api;
+
+fn Seen* slot(int uid) {
+    for (int i = 0; i < MAX_TRACK; i++) if (seen[i].used && seen[i].uid == uid) return &seen[i];
+    return null;
+}
+
+// Append a String into buf (bounds-checked). Allocator-free, so it is safe on
+// the plugin's server threads — string::tformat would PANIC here (the plugin's
+// temp allocator isn't initialised on these threads; see the Threading section).
+fn usz put(char[] buf, usz n, String s) {
+    foreach (char ch : s) { if (n >= buf.len) break; buf[n] = ch; n++; }
+    return n;
+}
+
+fn void on_lifecycle(void* c, int event) {
+    if (api.client_is_hidden(c)) return;   // never announce shadow mods
+    int uid = api.client_get_uid(c);
+    char[256] m;
+    usz n = 0;
+
+    switch (event) {
+        case EVENT_JOIN:
+            for (int i = 0; i < MAX_TRACK; i++) {
+                if (!seen[i].used) { seen[i].used = true; seen[i].uid = uid; seen[i].character[0] = 0; break; }
+            }
+            n = put(m[..], n, api.client_display_name(c));
+            n = put(m[..], n, " connected.");
+            api.broadcast_all_msg((String)m[0..n - 1]);
+
+        case EVENT_LEAVE:
+            Seen* sl = slot(uid);
+            if (sl != null) sl.used = false;
+            n = put(m[..], n, api.client_display_name(c));
+            n = put(m[..], n, " disconnected.");
+            api.broadcast_all_msg((String)m[0..n - 1]);
+
+        case EVENT_UPDATE:
+            Seen* su = slot(uid);
+            if (su == null) return;
+            String cur = api.client_get_char_name(c);
+            // Compare against the stored copy; only announce a genuine change.
+            int len = 0; while (su.character[len] != 0) len++;
+            String old = len == 0 ? "" : (String)su.character[0..len - 1];
+            if (old != cur && cur.len > 0) {
+                int k = (int)cur.len < 63 ? (int)cur.len : 63;
+                for (int i = 0; i < k; i++) su.character[i] = cur[i];
+                su.character[k] = 0;
+                n = put(m[..], n, api.client_display_name(c));
+                n = put(m[..], n, " is now playing ");
+                n = put(m[..], n, cur);
+                api.broadcast_all_msg((String)m[0..n - 1]);
+            }
+
+        default:
+            break;
+    }
+}
+
+fn bool whisker_plugin_init(PluginAPI* plugin_api) @export("whisker_plugin_init") {
+    api = plugin_api;
+    for (int i = 0; i < MAX_TRACK; i++) seen[i].used = false;
+    api.register_lifecycle_hook(&on_lifecycle, "Announcer");
+    io::printn("[announcer] loaded");
+    return true;
+}
+
+// whisker_plugin_info() and whisker_plugin_shutdown() as in Example 1.
+```
+
+For a complete, production-quality lifecycle plugin that pushes real protocol
+packets (the AO2 2.11 player list) rather than chat lines, read
+`OPTIONAL Plugins/player_list.c3` end to end.
+
 ## Best Practices
 
 1. **Keep it focused.** One plugin per feature. Don't build a monolith.
@@ -1173,13 +1375,27 @@ fn bool on_music(void* c, void* pkt) {
 
 ## Threading in Plugins
 
-If your plugin spawns threads (e.g., for background tasks like heartbeats), you **must not**
-use C3's temp allocator (`dstring::temp()`, `string::tformat()`, `@pool_init()`) in the
-thread function. Standalone plugins are loaded via `dlopen`/`LoadLibrary`, which gives the
-plugin its own copy of the C3 runtime. Thread-local storage (TLS) for the temp allocator
-doesn't work correctly across this boundary, causing segfaults.
+There are **two** thread hazards, both from the same root cause: a standalone
+plugin is loaded via `dlopen`/`LoadLibrary`, so it gets its **own** copy of the
+C3 runtime, whose temp allocator is thread-local and only initialised on the
+*main* thread — which your plugin code never runs on.
 
-**The safe pattern:**
+**Hazard 1 — your handlers run on the server's per-client threads.** Command,
+packet, **and lifecycle** handlers are all invoked on the thread that owns the
+client, *not* the main thread. So `dstring::temp()` and `string::tformat()`
+**panic** there too (*"Use @pool_init() to enable the temp allocator on a new
+thread"*) — this is **not** limited to threads you spawn yourself. The fix:
+**build wire data and messages into fixed `char[]` buffers with manual
+formatting**, exactly as `player_list.c3` does (`put_str` / `put_int` /
+`put_escaped`), then hand the slice to the API. No allocator, no TLS — safe on
+every thread and platform. (Examples elsewhere in this guide that call
+`string::tformat` inside a handler assume the allocator is available; treat that
+as shorthand and prefer the fixed-buffer pattern for anything you actually ship,
+especially on Windows where it reliably panics.)
+
+**Hazard 2 — threads your plugin spawns** (e.g., a background heartbeat). Same
+ban on the temp allocator, and you also shouldn't rely on C3 runtime services at
+all. The safe pattern:
 
 1. **Do all string building on the main thread** (inside `whisker_plugin_init`), where C3's
    temp allocator works normally.
@@ -1554,9 +1770,21 @@ usually manifests as a crash or silent corruption.
 2. If it changed, update your plugin's local `PluginAPI` copy to match.
 3. Rebuild and redeploy your plugin.
 
-The production plugins in `OPTIONAL Plugins/` (especially `case_manager.c3`)
-are always kept in sync with the server's struct. Copy the struct from there
-when in doubt.
+The production plugins in `OPTIONAL Plugins/` are always kept in sync with the
+server's struct. Copy the struct from `case_manager.c3` for the v2 field set, or
+from **`player_list.c3`** if you need the v3 lifecycle fields at the end.
+
+**The append-only guarantee (why old plugins keep working).** Whisker only ever
+**appends** new fields to the *end* of `PluginAPI` — existing fields never move
+or change type. So a plugin compiled against an older, shorter struct still finds
+every function pointer it knows about at the right offset; it simply stops
+reading before the newer fields and never touches them. That means **already-compiled
+`.dll`/`.so` plugins keep working across these additions with no recompile** — v1
+→ v2 (+15), → `args_split`, → `to_lower`, and now → v3's three lifecycle fields
+(`register_lifecycle_hook`, `client_get_ooc_name`, `client_is_hidden`) have all
+been added this way. The only thing you must never do in your own struct copy is
+*insert* or *reorder* fields. You only need to update your copy (and recompile)
+when you actually want to *call* something newly added.
 
 ## What the Extended API (v2) Adds
 
@@ -1593,6 +1821,32 @@ stop at `args_split` and never read it.
 spam filters, area lockdown systems, player count monitors, welcome-back
 messages for returning players, packet rewriting hooks, and server-wide
 event systems — none of which were possible before.
+
+## What Lifecycle Hooks (v3) Add
+
+v2 still left one category impossible: **stateful presence tracking.** Every v2
+hook is packet-driven, and packets have two blind spots — a disconnect sends no
+packet at all, and the client keepalive is only every ~45 s. So you could never
+reliably answer "who is in the room right now?" from a plugin.
+
+v3 appends three fields to close that gap:
+
+| Field | Signature | Purpose |
+|-------|-----------|---------|
+| `register_lifecycle_hook` | `fn void(fn void(void*, int), String)` | Subscribe one handler to JOIN / LEAVE / UPDATE events. |
+| `client_get_ooc_name` | `fn String(void*)` | The client's current OOC display name (`""` if unset). |
+| `client_is_hidden` | `fn bool(void*)` | `true` for shadow mods (SHADOW role) — omit from public lists. |
+
+See [Registering Lifecycle Hooks](#registering-lifecycle-hooks-v3) for the event
+semantics and [Example 10](#example-10-joinleave-announcer-lifecycle-hooks-v3)
+for a worked plugin.
+
+**What this unlocks:** live player lists (the AO2 2.11 feature — shipped as the
+optional `player_list` plugin), join/leave announcers, Discord presence bridges,
+auto-roles on join, accurate "online now" tracking, and anything else that needs
+to follow players coming, going, and changing — driven by real events instead of
+polling. Backwards compatible exactly like v2: appended at the end, old plugins
+untouched.
 
 ## Hookable Packet Headers
 

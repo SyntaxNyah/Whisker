@@ -185,6 +185,35 @@ alias ApiArgsSplitFn           = fn int(String args, String* out, int max);
 // UTF-8 multibyte bytes — are copied through unchanged.
 alias ApiToLowerFn             = fn int(String s, char* out, int max);
 
+// -- Lifecycle hooks (v3) --
+//
+// Packet hooks (above) only fire when a client SENDS a packet. That leaves
+// two blind spots a stateful plugin can't work around:
+//   1. Disconnects produce no packet — a socket just closes — so a packet
+//      hook can never see a client leave.
+//   2. The desktop client only sends a keepalive every 45 seconds, so any
+//      reaction driven by incoming packets can lag badly in a quiet room.
+//
+// Lifecycle hooks close both gaps: the server calls them directly at the
+// moments a client joins, leaves, or changes visible state. This is the
+// piece that makes a live player-list plugin possible. The event codes are
+// config::PLUGIN_EVENT_JOIN / LEAVE / UPDATE; see the "Lifecycle Hooks"
+// section of the Plugin Dev Guide for a complete worked example.
+//
+// One handler receives every event — switch on `event` to tell them apart.
+// The client pointer is void* for standalone-plugin ABI safety; pass it
+// straight back into the client_* API calls to read UID, character, area,
+// OOC name, hidden state, and so on.
+alias ApiLifecycleHook           = fn void(void* client, int event);
+alias ApiRegisterLifecycleHookFn = fn void(ApiLifecycleHook hook, String plugin_name);
+
+// Two client getters that v1/v2 lacked but lifecycle-driven plugins need:
+//   client_get_ooc_name : the client's current OOC display name ("" if unset).
+//   client_is_hidden    : true when the client holds the SHADOW permission
+//                         and should be omitted from public player lists.
+alias ApiClientGetOocNameFn      = fn String(void* client);
+alias ApiClientIsHiddenFn        = fn bool(void* client);
+
 // ============================================================
 // Plugin API — passed to plugins during init
 // ============================================================
@@ -256,6 +285,16 @@ struct PluginAPI {
     // Appended after args_split — same append-only ABI rule. Plugins compiled
     // before to_lower existed stop reading at args_split and never touch it.
     ApiToLowerFn             to_lower;
+
+    // Appended after to_lower (v3) — lifecycle hooks plus the two getters
+    // they rely on. SAME append-only ABI rule: every field above keeps its
+    // exact offset, so plugins compiled against v1/v2 (which declare a shorter
+    // PluginAPI) stop reading at to_lower and never touch these. Existing
+    // compiled .dll/.so plugins therefore keep working with no recompile.
+    // New fields MUST always be added here, at the end — never inserted.
+    ApiRegisterLifecycleHookFn register_lifecycle_hook;
+    ApiClientGetOocNameFn      client_get_ooc_name;
+    ApiClientIsHiddenFn        client_is_hidden;
 }
 
 // ============================================================
@@ -281,6 +320,15 @@ struct PluginPacketHook {
 }
 
 // ============================================================
+// Registered lifecycle hook
+// ============================================================
+
+struct PluginLifecycleHook {
+    ApiLifecycleHook hook;
+    String           plugin_name;
+}
+
+// ============================================================
 // Plugin Manager
 // ============================================================
 
@@ -298,6 +346,9 @@ struct PluginManager {
     PluginPacketHook[MAX_PLUGIN_HOOKS]   hooks;
     int                                   hook_count;
 
+    PluginLifecycleHook[MAX_PLUGIN_HOOKS] lifecycle_hooks;
+    int                                    lifecycle_hook_count;
+
     // Runtime handles for hot reload
     void*[MAX_PLUGINS]                   handles;       // dlopen/LoadLibrary handles
     PluginShutdownFn[MAX_PLUGINS]        shutdown_fns;  // Shutdown callbacks
@@ -308,6 +359,7 @@ fn PluginManager new_manager() {
     pm.plugin_count = 0;
     pm.command_count = 0;
     pm.hook_count = 0;
+    pm.lifecycle_hook_count = 0;
     return pm;
 }
 
@@ -470,6 +522,7 @@ fn void unload_all(PluginManager* pm) {
     pm.plugin_count  = 0;
     pm.command_count = 0;
     pm.hook_count    = 0;
+    pm.lifecycle_hook_count = 0;
 
     io::printn("[plugins] All plugins unloaded.");
 }
@@ -516,4 +569,15 @@ fn bool on_packet(PluginManager* pm, client::Client* c, protocol::Packet* pkt) {
         }
     }
     return false;
+}
+
+// Fire a lifecycle event to every registered lifecycle hook.
+// The server calls this at join / leave / state-change points (see the
+// server::notify_client_* helpers). `event` is a config::PLUGIN_EVENT_*
+// code. Unlike packet hooks, lifecycle hooks never consume — every
+// registered plugin sees every event.
+fn void fire_lifecycle(PluginManager* pm, client::Client* c, int event) {
+    for (int i = 0; i < pm.lifecycle_hook_count; i++) {
+        pm.lifecycle_hooks[i].hook(c, event);
+    }
 }

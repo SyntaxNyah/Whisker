@@ -79,7 +79,7 @@ For detailed step-by-step setup instructions with commands, see the [WSS Setup G
 
 The plugin system is the answer to AO server fragmentation. The AO community has been through this cycle too many times -- someone forks a server to add a feature, the fork drifts, the upstream moves on, and now there are two half-maintained codebases that nobody can combine. Players get stuck on whichever fork their server chose, and developers burn out maintaining code that only helps one community.
 
-**Whisker's core is intentionally small and lightweight.** Connections, packets, areas, characters, moderation -- that's it. Everything else is a plugin. Want CM controls? Drop in `case_manager.dll`. Want your server listed on the master server? Drop in `server_advertiser.dll`. Don't want either? Don't drop anything in. Your server, your choice.
+**Whisker's core is intentionally small and lightweight.** Connections, packets, areas, characters, moderation -- that's it. Everything else is a plugin. Want CM controls? Drop in `case_manager.dll`. Want your server listed on the master server? Drop in `server_advertiser.dll`. Want the Attorney Online 2.11 live player list? Drop in `player_list.dll`. Don't want any of them? Don't drop anything in. Your server, your choice.
 
 **How it works for server operators:**
 

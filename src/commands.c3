@@ -285,6 +285,9 @@ fn void cmd_charselect(server::Server* srv, client::Client* c) {
         c.char_name = "";
     }
     c.send_simple("DONE");
+
+    // Character was cleared (back to spectator) — refresh lifecycle listeners.
+    server::notify_client_update(srv, c);
 }
 
 fn void cmd_global(server::Server* srv, client::Client* c, args::Args* argv) {

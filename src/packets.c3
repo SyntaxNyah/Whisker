@@ -188,6 +188,11 @@ fn void handle_rd(server::Server* srv, client::Client* c, protocol::Packet* pkt)
 
     // Broadcast updated ARUP
     server::broadcast_all_arup(srv);
+
+    // The client is now in the courtroom — let lifecycle plugins (e.g. the
+    // player list) announce it. Fired after DONE so the client's courtroom
+    // exists and will accept any packets the hook sends back to it.
+    server::notify_client_join(srv, c);
 }
 
 // ============================================================
@@ -231,6 +236,9 @@ fn void handle_cc(server::Server* srv, client::Client* c, protocol::Packet* pkt)
 
     // Broadcast updated char availability
     send_chars_check(srv, c.area_id);
+
+    // Character changed — refresh lifecycle listeners (player list, etc.).
+    server::notify_client_update(srv, c);
 }
 
 // MS: In-character message — the most complex packet
@@ -371,6 +379,11 @@ fn void handle_ct(server::Server* srv, client::Client* c, protocol::Packet* pkt)
 
     // Set OOC name
     c.ooc_name = name;
+
+    // OOC name may have changed — refresh lifecycle listeners. Cheap when
+    // unchanged: a player-list plugin diffs and only re-broadcasts on a real
+    // change, so this firing on every OOC line stays effectively free.
+    server::notify_client_update(srv, c);
 
     // Check if it's a command
     if (message.len > 0 && message[0] == '/') {
@@ -575,6 +588,10 @@ fn void change_area(server::Server* srv, client::Client* c, int new_area_id) {
     server::broadcast_all_arup(srv);
 
     c.send_server_message(string::tformat("Moved to %s.", new_area.name));
+
+    // Area (and possibly character, if it was taken) changed — refresh
+    // lifecycle listeners such as the player list.
+    server::notify_client_update(srv, c);
 }
 
 // ============================================================

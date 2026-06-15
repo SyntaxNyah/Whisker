@@ -1,0 +1,81 @@
+name: Build Plugins
+
+# Builds the optional plugins on a Linux runner — native .so plus a
+# cross-compiled .dll, exactly the way OPTIONAL Plugins/build_plugins.sh does
+# locally — and commits the refreshed binaries straight back into
+# OPTIONAL Plugins/Linux and OPTIONAL Plugins/Windows.
+#
+# Why a single Linux runner builds BOTH:
+#   * Linux .so  — native build (`c3c build --target linux-x64`).
+#   * Windows .dll — cross-compiled (`c3c build --target windows-x64`). A NATIVE
+#     Windows build can't link the plugins (the project.json links libc as
+#     `c.lib`, which doesn't exist on Windows), but cross-compiling the .dll
+#     from Linux works fine.
+#
+# Push a change to any plugin source and its compiled binaries update
+# themselves — no local toolchain required.
+
+on:
+  push:
+    branches: ["**"]
+    # Only react to plugin SOURCE changes. The job's own commit only touches
+    # the Linux/ and Windows/ binary folders, which are NOT listed here, so it
+    # can never retrigger itself (the [skip ci] tag below is a second guard).
+    paths:
+      - "OPTIONAL Plugins/*.c3"
+      - "OPTIONAL Plugins/**/project.json"
+      - "OPTIONAL Plugins/build_plugins.sh"
+      - ".github/workflows/plugins.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-plugins-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  plugins:
+    name: Build & commit plugin binaries
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup C3 (Linux)
+        run: |
+          curl -sL https://github.com/c3lang/c3c/releases/latest/download/c3-linux.tar.gz -o c3c.tar.gz
+          tar xzf c3c.tar.gz
+          C3_DIR=$(find . -maxdepth 1 -type d -name "c3*" | head -1)
+          echo "$PWD/$C3_DIR" >> "$GITHUB_PATH"
+
+      - name: Verify C3
+        run: c3c --version
+
+      # The Linux .so is the artifact that can't be produced any other way, so
+      # this step must succeed.
+      - name: Build Linux .so
+        working-directory: "OPTIONAL Plugins"
+        run: |
+          chmod +x build_plugins.sh
+          ./build_plugins.sh linux
+
+      # The Windows .dll is cross-compiled here too; treated as best-effort so a
+      # cross-link hiccup never blocks the (critical) .so commit.
+      - name: Build Windows .dll (cross-compiled, best effort)
+        continue-on-error: true
+        working-directory: "OPTIONAL Plugins"
+        run: ./build_plugins.sh windows
+
+      - name: Commit refreshed binaries
+        run: |
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add "OPTIONAL Plugins/Linux" "OPTIONAL Plugins/Windows"
+          if git diff --cached --quiet; then
+            echo "Plugin binaries already up to date — nothing to commit."
+          else
+            git commit -m "ci: rebuild optional plugin binaries [skip ci]"
+            git push origin "HEAD:${{ github.ref_name }}"
+          fi

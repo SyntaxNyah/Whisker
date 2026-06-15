@@ -18,6 +18,7 @@ import whisker::plugin;
 import whisker::websocket;
 import whisker::console;
 import whisker::moderation;
+import whisker::commands;
 import std::io;
 import std::net::tcp;
 import std::time;
@@ -474,6 +475,13 @@ fn void client_handler(Server* server, client::Client* c) {
 fn void client_cleanup(Server* server, client::Client* c) {
     io::printfn("[server] Client disconnected: UID %d (%s)", c.uid, c.ipid);
 
+    // Notify plugins of the departure while the client's UID, character, and
+    // area are still readable and it is still in the client list. Only joined
+    // clients ever appear in player lists, so skip pre-handshake drops.
+    if (c.joined) {
+        notify_client_leave(server, c);
+    }
+
     // Clean up pairing
     pairing::on_disconnect(c, &server.clients, server.client_count);
 
@@ -668,6 +676,17 @@ fn void _api_register_hook(String header, plugin::PacketHook hook, String plugin
     pm.hook_count++;
 }
 
+fn void _api_register_lifecycle_hook(plugin::ApiLifecycleHook hook, String plugin_name) {
+    plugin::PluginManager* pm = &_plugin_srv.plugins;
+    if (pm.lifecycle_hook_count >= plugin::MAX_PLUGIN_HOOKS) return;
+
+    pm.lifecycle_hooks[pm.lifecycle_hook_count] = {
+        .hook = hook,
+        .plugin_name = plugin_name,
+    };
+    pm.lifecycle_hook_count++;
+}
+
 // -- Server operations --
 
 fn void* _api_find_client(int uid) {
@@ -785,6 +804,9 @@ fn void _api_force_move(void* c, int new_area_id) {
     packets::send_area_state(srv, target);
     broadcast_all_arup(srv);
     target.send_server_message(string::tformat("Moved to %s.", new_area.name));
+
+    // The client's area (and possibly character) changed — refresh listeners.
+    notify_client_update(srv, target);
 }
 
 // -- Client operations --
@@ -837,6 +859,19 @@ fn String _api_client_get_showname(void* c) {
 fn String _api_client_get_char_name(void* c) {
     if (c == null) return "";
     return ((client::Client*)c).char_name;
+}
+
+fn String _api_client_get_ooc_name(void* c) {
+    if (c == null) return "";
+    return ((client::Client*)c).ooc_name;
+}
+
+// A client is "hidden" when it carries the SHADOW permission (roles.toml).
+// Player-list and similar plugins use this to keep shadow mods off public
+// rosters. Mirrors the "Hidden from player lists" role bit in the mod guide.
+fn bool _api_client_is_hidden(void* c) {
+    if (c == null) return false;
+    return ((client::Client*)c).has_permission(commands::PERM_SHADOW);
 }
 
 fn bool _api_client_is_joined(void* c) {
@@ -1018,5 +1053,34 @@ fn plugin::PluginAPI build_plugin_api(Server* srv) {
         .area_invite           = &_api_area_invite,
         .args_split            = &_api_args_split,
         .to_lower              = &_api_to_lower,
+
+        // Lifecycle hooks + supporting getters (v3)
+        .register_lifecycle_hook = &_api_register_lifecycle_hook,
+        .client_get_ooc_name     = &_api_client_get_ooc_name,
+        .client_is_hidden        = &_api_client_is_hidden,
     };
+}
+
+// ============================================================
+// Lifecycle notifications — call sites for plugin lifecycle hooks
+// ============================================================
+//
+// Thin wrappers so the handful of core call sites (here, in packets.c3,
+// and in commands.c3) don't each need to import the plugin module or know
+// the raw event codes. Each forwards to plugin::fire_lifecycle, which fans
+// the event out to every plugin that registered a lifecycle hook.
+
+// A client finished the handshake and is in the courtroom.
+fn void notify_client_join(Server* srv, client::Client* c) {
+    plugin::fire_lifecycle(&srv.plugins, c, config::PLUGIN_EVENT_JOIN);
+}
+
+// A joined client is disconnecting (still fully readable; not yet removed).
+fn void notify_client_leave(Server* srv, client::Client* c) {
+    plugin::fire_lifecycle(&srv.plugins, c, config::PLUGIN_EVENT_LEAVE);
+}
+
+// A joined client's visible state changed (character, area, or OOC name).
+fn void notify_client_update(Server* srv, client::Client* c) {
+    plugin::fire_lifecycle(&srv.plugins, c, config::PLUGIN_EVENT_UPDATE);
 }

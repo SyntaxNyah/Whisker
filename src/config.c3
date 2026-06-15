@@ -69,6 +69,20 @@ const int     ARUP_STATUS                   = 1;
 const int     ARUP_CM                       = 2;
 const int     ARUP_LOCK                     = 3;
 
+// -- Plugin lifecycle events --
+// Event codes passed to plugin lifecycle hooks (see plugin.c3 and the
+// "Lifecycle Hooks" section of the Plugin Dev Guide). They let a plugin
+// react to client comings, goings, and state changes without patching the
+// core — the same job a player-list plugin needs.
+//   JOIN   : a client finished the handshake and is in the courtroom.
+//   LEAVE  : a joined client is disconnecting (fires before it is removed,
+//            while its UID/character/area are still readable).
+//   UPDATE : a joined client's visible state changed — character, area, or
+//            OOC name. Handlers re-read current state and act on the delta.
+const int     PLUGIN_EVENT_JOIN             = 0;
+const int     PLUGIN_EVENT_LEAVE            = 1;
+const int     PLUGIN_EVENT_UPDATE           = 2;
+
 // -- Auth states --
 const int     AUTH_SUCCESS                  = 1;
 const int     AUTH_FAILURE                  = 0;

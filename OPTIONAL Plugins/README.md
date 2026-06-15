@@ -103,6 +103,15 @@ Delete this entire `OPTIONAL Plugins` folder. It won't affect your server.
 
 The pre-built binaries in `Windows/` and `Linux/` are ready to use. If you need to rebuild them (e.g., after modifying the source), you'll need [c3c](https://c3-lang.org/) installed.
 
+**Easiest: let CI do it (no local toolchain needed).** The
+[`Build Plugins`](../.github/workflows/plugins.yml) workflow runs whenever you
+push a change to a plugin's source (`*.c3`, a `project.json`, or
+`build_plugins.sh`). A Linux runner builds every plugin — native `.so` **and**
+cross-compiled `.dll` — and commits the refreshed binaries straight back into
+`Linux/` and `Windows/`. So adding or editing a plugin and pushing is enough;
+the compiled binaries update themselves. (The auto-commit is tagged `[skip ci]`
+and only touches the binary folders, so it never triggers itself.)
+
 **Quick rebuild (all plugins, both platforms):**
 ```bash
 ./build_plugins.sh all
@@ -343,6 +352,93 @@ Not every AO2 server is a casing server. Roleplay servers, social servers, and g
 | Max notecards | 32 per area |
 | Max WT/CE blocks | 32 per area |
 | Judge log entries | 10 per area (ring buffer) |
+
+---
+
+### Player List
+
+**Compiled:** `Windows/player_list.dll` · `Linux/player_list.so`
+**Source:** `player_list.c3`
+
+Implements the Attorney Online **2.11 player list** — the live roster the 2.11
+desktop client shows in the top-left of the courtroom (when the theme provides
+the widget). Inspired by the player lists in [Akashi](https://github.com/AttorneyOnline/akashi)
+and [Nyathena](https://github.com/SyntaxNyah/Nyathena).
+
+It is the reference example of a **lifecycle-hook** plugin: it holds no commands
+and speaks pure protocol. When a player joins, picks a character, changes area,
+sets an OOC name, or leaves, it pushes the matching AO2 2.11 `PR`/`PU` packets to
+every client. See [PR / PU — Player List](../docs/AO2_PROTOCOL.md#pr--pu--player-list-211)
+in the protocol reference and the [Lifecycle Hooks](../plugins/PLUGIN%20DEV%20GUIDE%20README.md#registering-lifecycle-hooks-v3)
+section of the Plugin Dev Guide.
+
+**What this plugin adds:**
+
+- **Live player roster** — every 2.11 client sees who is present, their
+  character, and which area they're in, updated in real time.
+- **Instant join/leave** — players appear the moment they enter the courtroom
+  and vanish the moment they disconnect (driven by core lifecycle events, not
+  the slow 45-second keepalive).
+- **Shadow-mod hiding** — players with the SHADOW role ("hidden from player
+  lists") receive the list but are never shown on it.
+
+**Commands:** none. This plugin has no OOC commands — it works entirely over the
+protocol, so there is nothing to type and nothing in `/help`.
+
+**Setup:**
+
+1. Grab the `.dll` or `.so` from the appropriate folder and drop it into your
+   server's `plugins/` directory.
+2. Restart the server. No configuration needed.
+3. The list appears for players on a 2.11+ client whose theme defines the player
+   list widget. Older clients ignore it harmlessly.
+
+**To remove it:**
+
+Delete the `.dll` / `.so` file from `plugins/` and restart. The list disappears
+for everyone.
+
+**Why is this a plugin and not built-in?**
+
+A player list is genuinely divisive, so Whisker ships it as opt-in rather than
+forcing it on every server:
+
+- **Privacy / lurking.** Many communities consider it normal to watch a case
+  quietly. A public roster exposes every spectator by name — some servers (and
+  players) specifically don't want that.
+- **Roleplay immersion.** Some servers want presence felt in-character only, with
+  no out-of-character sidebar listing who's in the room.
+- **Moderation style.** On some servers only mods should see who's present;
+  showing everyone to everyone changes that dynamic.
+- **Lightweight servers.** The feature adds a small broadcast on every join,
+  leave, character swap, area move, and name change. Tiny, but a minimal server
+  may simply not want the traffic.
+- **Client/theme dependent.** It only renders on 2.11+ clients with a supporting
+  theme, so for many users it does nothing anyway.
+
+Servers that want it drop in the plugin; servers that don't, don't — without
+anyone forking the server to add or remove it.
+
+**Design notes (for developers):**
+
+- Built entirely on the core's **plugin lifecycle hooks** (`register_lifecycle_hook`
+  — JOIN/LEAVE/UPDATE). A plain packet hook can't see disconnects (no packet is
+  sent when a socket closes) and the client keepalive is only every 45 s, so
+  lifecycle hooks are what make an accurate live list possible.
+- Keeps a small in-memory roster (uid → character / area / OOC-name snapshot) and
+  diffs on UPDATE so it only broadcasts real changes — the OOC-name event in
+  particular fires on every OOC line.
+- State is lockless, matching the rest of the server (the core's own
+  broadcast/client-list code doesn't lock either).
+- Talks to the server only through the `PluginAPI` function pointers — no imports
+  from the server source.
+
+**Limits:**
+
+| Limit | Value |
+|-------|-------|
+| Max listed players | 1024 (matches the server's client cap) |
+| Character / OOC-name snapshot | 63 bytes each |
 
 ---
 

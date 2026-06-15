@@ -11,7 +11,19 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PLUGINS=("case_manager" "server_advertiser" "casing")
+
+# Auto-discover plugins: every subdirectory that contains a project.json is a
+# buildable plugin (by convention its target/output name matches the folder
+# name). Add a new plugin = drop in <name>/project.json + <name>.c3; the build
+# (and CI) picks it up automatically — no list to maintain here.
+PLUGINS=()
+for dir in "$SCRIPT_DIR"/*/; do
+    name="$(basename "$dir")"
+    if [ -f "$dir/project.json" ]; then
+        PLUGINS+=("$name")
+    fi
+done
+echo "Discovered plugins: ${PLUGINS[*]}"
 
 build_native() {
     echo "=== Building plugins for current platform ==="

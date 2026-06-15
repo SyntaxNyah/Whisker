@@ -46,7 +46,7 @@ Whisker is an Attorney Online 2 (AO2) server written in C3. It implements the fu
 
 1. **No magic numbers.** Every constant is named in `config.c3`. Grep for `const` to find them all.
 2. **Thread-per-client.** Simple model like Athena. Each connection gets its own handler thread with its own `@pool_init` memory pool. Client structs are created inside the handler's pool to prevent cross-pool memory corruption.
-3. **Plugins over forks.** The plugin system lets you add commands, packet hooks, moderation actions, area management, and server-wide broadcasts without modifying core code. The PluginAPI exposes 48 function pointers covering registration, client operations, area operations, broadcasting, packet field access, moderation, argument splitting, and ASCII lower-casing. The extended API (v2) added 15 functions for packet inspection, moderation actions, server-wide broadcasts, area manipulation, player counting, and IPID access; later additions appended `args_split` (the quote-aware argument tokenizer) and `to_lower` (an ASCII lower-caser) — all appended at the end of the struct for backwards compatibility with existing compiled plugins.
+3. **Plugins over forks.** The plugin system lets you add commands, packet hooks, lifecycle hooks, moderation actions, area management, and server-wide broadcasts without modifying core code. The PluginAPI exposes 51 function pointers covering registration, client operations, area operations, broadcasting, packet field access, moderation, argument splitting, ASCII lower-casing, and client lifecycle events. The extended API (v2) added 15 functions for packet inspection, moderation actions, server-wide broadcasts, area manipulation, player counting, and IPID access; later additions appended `args_split` (the quote-aware argument tokenizer) and `to_lower` (an ASCII lower-caser); a v3 block then appended **lifecycle hooks** (`register_lifecycle_hook` — JOIN/LEAVE/UPDATE events fired from `server::notify_client_*`, the only way a plugin can observe disconnects and state changes a packet hook can't) plus the `client_get_ooc_name` / `client_is_hidden` getters they need. All of these are appended at the end of the struct for backwards compatibility with existing compiled plugins — the optional player-list plugin is built entirely on the v3 lifecycle hooks.
 4. **Arguments arrive as a list.** Command code never re-splits a raw string. `whisker::args` tokenizes the command tail once (quote-aware: `12 "ban evading" "3 days"` → three tokens) and built-in commands receive a parsed `Args`. The plugin command handler ABI stays `fn void(void*, String)` for binary stability, but plugins get the same splitter through `api.args_split`.
 5. **UID-based pairing.** Pairs survive character changes and area moves (inspired by Nyathena).
 6. **Multi-layer rate limiting.** Separate limits for IC messages, OOC, raw packets, and connections per IP.
@@ -101,9 +101,9 @@ Each plugin exports:
 - `whisker_plugin_shutdown()` — cleanup
 
 The PluginAPI (defined in `plugin.c3`, wrappers in `server.c3`) exposes:
-- **Registration**: commands, packet hooks
+- **Registration**: commands, packet hooks, lifecycle hooks (JOIN/LEAVE/UPDATE)
 - **Broadcasting**: per-area msg/raw, server-wide msg/raw, ARUP updates
-- **Client ops**: send messages, get UID/area/IPID/character info, kick, mute/unmute
+- **Client ops**: send messages, get UID/area/IPID/character/OOC-name info, hidden state, kick, mute/unmute
 - **Area ops**: CM management, lock/unlock, invite, background, status, song, force-move
 - **Packet access**: read field count and individual fields from hooked packets
 - **Server info**: player count, area count, per-area player count
