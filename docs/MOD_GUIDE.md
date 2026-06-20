@@ -519,6 +519,79 @@ Use `0` as the duration for permanent bans.
 
 Use `/unban <ban-index>` to remove a ban. The ban index is assigned when the ban is created.
 
+### IP Guard plugin
+
+The built-in `/ban` works on the hashed **IPID** of one connected player — perfect
+for "ban this user," but it can't express "this whole range," "this datacenter,"
+or "this country," and it loses to an abuser who reconnects on a fresh IP. The
+**optional `ip_guard` plugin** (in `OPTIONAL Plugins/`) fills that gap: it blocks
+connections by **IP, CIDR range, ASN, or country** — IPv4 and IPv6 — at the moment
+they connect, before they cost the server a thread.
+
+It's optional and off until you opt in — drop `ip_guard.dll` / `ip_guard.so` into
+`plugins/`, restart, then edit `config/ip_guard.txt` (a commented template is
+created on first run) and run `/ipbanreload`.
+
+**When to reach for it:**
+
+- A single abuser keeps reconnecting from new addresses in the same cloud
+  provider → block the provider's **ASN** (`asn AS14061`) and the whole pool is
+  gone at once.
+- A country shows up in your traffic only as VPN/proxy exit nodes with no real
+  players → block it (`country CN`). This is a blunt instrument and **will** also
+  block genuine visitors from there, so decide deliberately; use `allow` lines to
+  whitelist trusted regulars who'd otherwise be caught.
+- You want to drop a known-bad subnet outright → `cidr 203.0.113.0/24`.
+
+**Commands** (need the **BAN** permission):
+
+| Command | Description |
+|---------|-------------|
+| `/ipban <ip\|cidr> [note]` | Block an address/range live (also saved to `config/ip_guard.txt`) |
+| `/ipunban <ip\|cidr>` | Remove a live `/ipban` rule |
+| `/ipbanlist` | Show rule counts, geo-database status, and total blocked |
+| `/ipbanlog` | Show the most recent blocked connection attempts |
+| `/ipbanreload` | Re-read `config/ip_guard.txt` and refresh the geo/ASN database |
+
+**Config (`config/ip_guard.txt`) at a glance** — one rule per line, `#` for
+comments:
+
+```text
+ip       203.0.113.7
+cidr     203.0.113.0/24
+cidr     2001:db8::/32
+asn      AS14061
+country  CN
+allow    198.51.100.10        # exception: never block this (wins over all)
+```
+
+Options: `alert_blocked` (off by default — post a coalesced OOC notice to staff
+when a connection is blocked, so you can see it working and learn what to block
+next), `alert_permission` (which role's permission bits see those alerts; a
+bitmask matching `roles.toml`, default = the BAN bit), `alert_interval_sec`,
+`block_unknown` (drop connections whose IP can't be read at all — *not* IPv6
+support; IPv6 is matched normally), `auto_update` / `update_interval_days`, and
+overridable database URLs.
+
+**Plug-and-play geolocation.** Country/ASN rules need to know which network a
+given IP belongs to. The plugin downloads the public-domain
+[iptoasn](https://iptoasn.com) database itself (via `curl`) on first run and
+caches it next to your config — no account, no API key, nothing to install. If
+the download can't run, the plugin says so in the console and keeps working with
+your `ip`/`cidr`/`allow` rules (which need no database).
+
+**IPv6.** Matching is full-stack, but you only *receive* IPv6 connections if the
+server listens on IPv6 — set `addr = "::"` in `[server]`. On Linux that also
+accepts IPv4 (as v4-mapped, normalised back to dotted-quad); on Windows `::` is
+IPv6-only by default. Behind a trusted reverse proxy (Cloudflare/nginx), the real
+forwarded IP is what gets matched, so geo-blocking works there regardless.
+
+**Performance.** Blocked connections are rejected at accept time with an
+O(log n) lookup and never cost a thread, so this *reduces* load under abuse;
+when the plugin isn't installed the core does no extra work at all. See the
+[Optional Plugins README](../OPTIONAL%20Plugins/README.md#ip-guard) for the full
+reference.
+
 ---
 
 ## Plugins

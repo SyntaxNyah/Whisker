@@ -18,6 +18,7 @@ these checks **in the accept thread** — no resources are allocated yet:
 | Check | What it does | Default |
 |-------|-------------|---------|
 | **Ban check** | Rejects banned IPIDs instantly | — |
+| **Plugin connection filters** | Optional plugins veto a connection by raw IP (e.g. `ip_guard`) | none unless a plugin is installed |
 | **Connection rate limit** | Max connections per IP per window | 10 per 10s |
 | **Flood autoban** | Auto-bans IPs that keep hitting the rate limit | After 6 rejections |
 | **Multiclient limit** | Max simultaneous connections from one IP | 16 |
@@ -25,6 +26,14 @@ these checks **in the accept thread** — no resources are allocated yet:
 
 A rejected connection is just a `close()` call — no thread, no memory pool,
 no packet parsing.
+
+> **Optional: IP / CIDR / ASN / country blocking.** The connection-filter check
+> is the hook the optional [`ip_guard`](../OPTIONAL%20Plugins/README.md#ip-guard)
+> plugin uses to reject connections by raw IP, CIDR range, ASN (whole datacenters),
+> or country — at this same pre-thread stage, so blocked traffic costs nothing.
+> It's an in-server complement to the kernel/Cloudflare rules below: drop the
+> plugin in and manage the lists with `/ipban` and `config/ip_guard.txt`. With no
+> such plugin installed this check does nothing and adds no overhead.
 
 ### Layer 2: Handshake Gate
 

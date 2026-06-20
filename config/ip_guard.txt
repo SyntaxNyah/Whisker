@@ -1,0 +1,91 @@
+# ============================================================
+# Whisker IP Guard — connection blocklist
+# ============================================================
+#
+# This file is read by the OPTIONAL ip_guard plugin (drop ip_guard.dll / .so
+# into plugins/). If that plugin isn't installed, this file does nothing.
+#
+# One rule per line. '#' starts a comment. Blank lines are ignored.
+# After editing, apply changes with  /ipbanreload  in-game (BAN permission),
+# or just restart the server.
+#
+# By default NOTHING below is active — every rule line is commented out. Uncomment
+# (remove the leading '#') the rules you want. This keeps the plugin a no-op until
+# you deliberately opt in.
+#
+# ------------------------------------------------------------
+# Rule types
+# ------------------------------------------------------------
+#
+#   ip       <addr>        Block a single address (IPv4 or IPv6).
+#   cidr     <addr/prefix> Block a CIDR range (IPv4 or IPv6).
+#   asn      <AS####>      Block every range announced by an Autonomous System.
+#   country  <CC>          Block every range geolocated to a country
+#                          (ISO 3166-1 alpha-2 code, e.g. CN, RU, IN).
+#   allow    <addr|cidr>   Exception: NEVER block this — wins over every rule
+#                          above (use it to whitelist a trusted user/range that
+#                          would otherwise be caught by a country/ASN block).
+#
+# A bare line that looks like an address or CIDR (e.g. "1.2.3.0/24") is also
+# treated as a block rule, so you can paste plain CIDR lists directly.
+#
+# ASN and country rules need the geolocation database, which the plugin
+# downloads automatically on first run (see "auto_update" below) — no account,
+# no API key, nothing to install. ip / cidr / allow rules work with no database.
+#
+# ------------------------------------------------------------
+# Examples (uncomment to use)
+# ------------------------------------------------------------
+#
+# ip       203.0.113.7
+# cidr     203.0.113.0/24
+# cidr     2001:db8::/32
+#
+# Block a whole cloud/datacenter provider by its ASN — one rule kills the entire
+# address pool that a single abuser keeps hopping through:
+# asn      AS14061      # DigitalOcean
+# asn      AS16509      # Amazon AWS
+#
+# Block countries that, for YOUR community, show up only as VPN/proxy exit
+# traffic with effectively no real players (a blunt instrument — it WILL also
+# block genuine visitors from there, so choose deliberately):
+# country  CN
+# country  RU
+#
+# Let a trusted regular through even though they share a blocked country/ASN:
+# allow    198.51.100.10
+#
+# ------------------------------------------------------------
+# Options
+# ------------------------------------------------------------
+#
+# Staff alert when a connection is blocked (OFF by default). Useful as proof the
+# filter is working and to learn which ranges to add next. Alerts are coalesced
+# and sent on a timer (never per-connection) so they can't slow the accept path.
+# alert_blocked        false
+#
+# Which permission bit may SEE the alerts (defaults to the BAN permission = 4).
+# This is a permissions bitmask, matching the numbers in roles.toml — point it at
+# whatever role you want to receive alerts (e.g. an admin role's value).
+# alert_permission     4
+#
+# Seconds to coalesce alerts over (default 30).
+# alert_interval_sec   30
+#
+# Drop connections whose IP can't be read as IPv4 or IPv6 (default false = let
+# them through). This is NOT IPv6 support (IPv6 is matched normally); it only
+# governs unreadable/unknown addresses. Leave off unless you want a hard
+# "known-good-IP only" door.
+# block_unknown        false
+#
+# Auto-download and refresh the country/ASN database (default true). Set false
+# for an air-gapped server (then only ip/cidr/allow rules work).
+# auto_update          true
+# update_interval_days 7
+#
+# Override the database source URLs (advanced; defaults point at the public-domain
+# sapics/ip-location-db iptoasn datasets). Self-host or swap source if you like.
+# country_db_url        https://github.com/sapics/ip-location-db/releases/download/latest/iptoasn-country-ipv4.csv
+# country_db_url_v6     https://github.com/sapics/ip-location-db/releases/download/latest/iptoasn-country-ipv6.csv
+# asn_db_url            https://github.com/sapics/ip-location-db/releases/download/latest/iptoasn-asn-ipv4.csv
+# asn_db_url_v6         https://github.com/sapics/ip-location-db/releases/download/latest/iptoasn-asn-ipv6.csv

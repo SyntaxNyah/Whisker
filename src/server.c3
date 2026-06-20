@@ -48,19 +48,72 @@ fn int get_raw_fd(tcp::TcpSocket* sock) {
 }
 
 fn String extract_peer_ip(tcp::TcpSocket* sock) {
+    // 28 bytes fits sockaddr_in6 (family 2 + port 2 + flowinfo 4 + addr 16 + scope 4).
     char[28] addr_buf;
     int addrlen = 28;
     int raw = get_raw_fd(sock);
 
     if (getpeername(raw, &addr_buf[0], &addrlen) != 0) return "unknown";
 
-    // sockaddr_in: family(2) + port(2) + addr(4)
     ushort family = *(ushort*)&addr_buf[0];
-    if (family != 2) return "unknown"; // AF_INET = 2
 
-    return string::tformat("%d.%d.%d.%d",
-        (int)(addr_buf[4] & 0xFF), (int)(addr_buf[5] & 0xFF),
-        (int)(addr_buf[6] & 0xFF), (int)(addr_buf[7] & 0xFF));
+    // AF_INET is 2 everywhere; AF_INET6 is platform-specific (Win=23, Linux=10).
+    ushort af_inet6;
+    $if env::WIN32:
+        af_inet6 = 23;
+    $else
+        af_inet6 = 10;
+    $endif
+
+    // -- IPv4 (sockaddr_in): family(2) + port(2) + addr(4) --
+    // UNCHANGED. Existing IPIDs and any persisted bans are FNV hashes of this
+    // exact dotted-quad text, so this branch must keep producing byte-identical
+    // output. Only the IPv6 handling below is new.
+    if (family == 2) { // AF_INET
+        return string::tformat("%d.%d.%d.%d",
+            (int)(addr_buf[4] & 0xFF), (int)(addr_buf[5] & 0xFF),
+            (int)(addr_buf[6] & 0xFF), (int)(addr_buf[7] & 0xFF));
+    }
+
+    // -- IPv6 (sockaddr_in6): the 16-byte address starts at offset 8 --
+    // Before this, every non-IPv4 peer returned "unknown", so all IPv6 clients
+    // collided on a single IPID — breaking per-IP rate limiting, the multiclient
+    // cap, and bans for them. Reading the real address fixes that AND lets the
+    // optional ip_guard plugin geo/CIDR-match IPv6.
+    if (family == af_inet6) {
+        char* a = &addr_buf[8];
+
+        // IPv4-mapped IPv6 (::ffff:a.b.c.d): on a dual-stack listener, ordinary
+        // IPv4 clients arrive as AF_INET6 with this prefix (10 zero bytes, then
+        // 0xff 0xff). Emit the dotted-quad so they still match IPv4 rules and
+        // hash to the SAME IPID as a native IPv4 connection — otherwise every
+        // IPv4 user on a dual-stack bind would be misread as IPv6.
+        bool v4_mapped = (a[10] & 0xFF) == 0xFF && (a[11] & 0xFF) == 0xFF;
+        for (int i = 0; i < 10 && v4_mapped; i++) {
+            if ((a[i] & 0xFF) != 0) v4_mapped = false;
+        }
+        if (v4_mapped) {
+            return string::tformat("%d.%d.%d.%d",
+                (int)(a[12] & 0xFF), (int)(a[13] & 0xFF),
+                (int)(a[14] & 0xFF), (int)(a[15] & 0xFF));
+        }
+
+        // Native IPv6 — 8 groups of 2 bytes, lowercase hex, colon-separated.
+        // Uncompressed form is fine: it is only hashed (IPID) and handed to
+        // plugins that parse it to a 128-bit integer, so canonical compression
+        // is irrelevant to correctness.
+        return string::tformat("%x:%x:%x:%x:%x:%x:%x:%x",
+            (((uint)(a[0]  & 0xFF)) << 8) | (uint)(a[1]  & 0xFF),
+            (((uint)(a[2]  & 0xFF)) << 8) | (uint)(a[3]  & 0xFF),
+            (((uint)(a[4]  & 0xFF)) << 8) | (uint)(a[5]  & 0xFF),
+            (((uint)(a[6]  & 0xFF)) << 8) | (uint)(a[7]  & 0xFF),
+            (((uint)(a[8]  & 0xFF)) << 8) | (uint)(a[9]  & 0xFF),
+            (((uint)(a[10] & 0xFF)) << 8) | (uint)(a[11] & 0xFF),
+            (((uint)(a[12] & 0xFF)) << 8) | (uint)(a[13] & 0xFF),
+            (((uint)(a[14] & 0xFF)) << 8) | (uint)(a[15] & 0xFF));
+    }
+
+    return "unknown";
 }
 
 // ============================================================
@@ -229,6 +282,16 @@ fn void Server.handle_new_connection(&self, tcp::TcpSocket socket, bool is_webso
     // This prevents banned clients from consuming a thread + 256KB pool.
     String ipid = security::generate_ipid(ip);
     if (self.ban_list.is_banned_ipid(ipid)) {
+        (void)socket.close();
+        return;
+    }
+
+    // Plugin connection filters — e.g. the optional ip_guard plugin (IP / CIDR
+    // / ASN / country blocklist). Runs here, at accept time, before a handler
+    // thread (and its 256KB pool) is spawned, exactly like the IPID ban check
+    // above: a blocked address costs nothing more than this lookup. This is a
+    // no-op (zero iterations) when no plugin has registered a filter.
+    if (plugin::on_connection(&self.plugins, ip)) {
         (void)socket.close();
         return;
     }
@@ -687,6 +750,17 @@ fn void _api_register_lifecycle_hook(plugin::ApiLifecycleHook hook, String plugi
     pm.lifecycle_hook_count++;
 }
 
+fn void _api_register_conn_filter(plugin::ApiConnectionFilter filter, String plugin_name) {
+    plugin::PluginManager* pm = &_plugin_srv.plugins;
+    if (pm.conn_filter_count >= plugin::MAX_PLUGIN_HOOKS) return;
+
+    pm.conn_filters[pm.conn_filter_count] = {
+        .filter = filter,
+        .plugin_name = plugin_name,
+    };
+    pm.conn_filter_count++;
+}
+
 // -- Server operations --
 
 fn void* _api_find_client(int uid) {
@@ -895,6 +969,22 @@ fn void _api_broadcast_all_raw(String data) {
     broadcast(_plugin_srv, data);
 }
 
+// Send a pre-built wire packet only to connected clients whose permissions
+// include ALL bits of `perms` (e.g. commands::PERM_BAN) — a role-gated
+// broadcast for staff-only notices. Mirrors `broadcast` but filters on
+// permission instead of `joined`. `perms == 0` matches everyone, so callers
+// that want "staff only" must pass a non-zero mask. send_raw is a no-op on a
+// disconnected client, so no extra liveness check is needed here.
+fn void _api_broadcast_perm_raw(String data, ulong perms) {
+    Server* srv = _plugin_srv;
+    for (int i = 0; i < MAX_SERVER_CLIENTS; i++) {
+        client::Client* c = srv.clients[i];
+        if (c != null && c.has_permission(perms)) {
+            c.send_raw(data);
+        }
+    }
+}
+
 fn int _api_get_player_count() {
     return _plugin_srv.client_count;
 }
@@ -907,6 +997,14 @@ fn int _api_get_area_player_count(int area_id) {
 fn String _api_client_get_ipid(void* c) {
     if (c == null) return "";
     return ((client::Client*)c).ipid;
+}
+
+// Raw client IP (IPv4 dotted-quad or IPv6 hex, or "unknown"). Unlike
+// client_get_ipid (a one-way hash) this is the real address, so a plugin can
+// do CIDR / ASN / country matching on it. See client.ip_address.
+fn String _api_client_get_ip(void* c) {
+    if (c == null) return "";
+    return ((client::Client*)c).ip_address;
 }
 
 fn String _api_packet_get_field(void* pkt, int index) {
@@ -1058,6 +1156,11 @@ fn plugin::PluginAPI build_plugin_api(Server* srv) {
         .register_lifecycle_hook = &_api_register_lifecycle_hook,
         .client_get_ooc_name     = &_api_client_get_ooc_name,
         .client_is_hidden        = &_api_client_is_hidden,
+
+        // Connection filtering + raw IP + role-gated broadcast (v4)
+        .client_get_ip           = &_api_client_get_ip,
+        .register_conn_filter    = &_api_register_conn_filter,
+        .broadcast_perm_raw      = &_api_broadcast_perm_raw,
     };
 }
 

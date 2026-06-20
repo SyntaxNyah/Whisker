@@ -374,6 +374,72 @@ fn void on_lifecycle(void* c, int event) {
 api.register_lifecycle_hook(&on_lifecycle, "My Plugin");
 ```
 
+### Registering Connection Filters (v4)
+
+Commands, packet hooks, and lifecycle hooks all fire **after** a client has
+already connected and been given a handler thread. For access control you often
+want to decide *before* that — to turn an unwanted connection away at the door,
+without it ever costing a thread. That's what a **connection filter** does.
+
+The server calls every registered filter for each inbound connection at **accept
+time** — the exact point the built-in IPID ban check runs, before a handler
+thread (and its 256 KB pool) is spawned. The filter receives the raw client IP
+and returns `true` to **reject** (the socket is closed immediately) or `false`
+to allow.
+
+```c3
+api.register_conn_filter(filter_fn, plugin_name);
+```
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| `filter_fn` | `fn bool(String)` | `fn bool(String ip)` — return `true` to reject the connection |
+| `plugin_name` | `String` | Your plugin's name |
+
+```c3
+fn bool my_filter(String ip) {
+    // ip is the raw address: IPv4 dotted-quad ("1.2.3.4") or IPv6 hex
+    // ("2001:db8::1"), or "unknown" if it couldn't be read.
+    return ip == "203.0.113.7"; // block exactly this one address
+}
+
+// in whisker_plugin_init:
+api.register_conn_filter(&my_filter, "My Plugin");
+```
+
+This is the hook the optional `ip_guard` plugin (IP / CIDR / ASN / country
+blocklist) is built on — see `OPTIONAL Plugins/ip_guard.c3` for a full worked
+example with CIDR matching and geolocation.
+
+Two companion functions were added alongside it (v4):
+
+- **`client_get_ip(c)`** → the client's **raw** IP (`String`). Every earlier API
+  only exposed the *hashed* IPID (`client_get_ipid`), which is one-way; a plugin
+  that needs to reason about ranges, ASNs, or geolocation needs the real address.
+- **`broadcast_perm_raw(data, perms)`** → send a pre-built wire packet only to
+  connected clients whose permissions include **all** bits of `perms` (e.g. the
+  BAN bit). A role-gated broadcast, for staff-only notices.
+
+Key points:
+
+- **Filters must be cheap and allocation-free.** They run on the accept loop, so
+  a slow filter slows *every* connection. Do O(log n) table lookups, never
+  network calls or broadcasts, in the filter itself. The accept thread also has
+  **no temp allocator**, so `string::tformat` / `dstring::temp()` **panic** here
+  (same rule as lifecycle hooks) — build into fixed `char[]` buffers, and don't
+  retain the borrowed `ip` slice past the call.
+- **Push expensive work elsewhere.** `ip_guard` records blocked attempts in the
+  filter (O(1)) and does its database downloads and coalesced staff alerts on a
+  background thread, never on the accept path.
+- **`broadcast_perm_raw` scans the whole client list**, so call it off the hot
+  path too (e.g. from a timer), not from inside the filter.
+
+> **In-tree vs standalone:** in-tree plugins already have all three on
+> `PluginAPI`. Standalone plugins append the three v4 fields (`client_get_ip`,
+> `register_conn_filter`, `broadcast_perm_raw`) to the **end** of their struct
+> copy, exactly as shown in `ip_guard.c3`. See
+> [Version Compatibility](#version-compatibility).
+
 ### Client API (via PluginAPI function pointers)
 
 Client pointers are `void*` in plugin handlers. Use the PluginAPI to interact:
@@ -396,6 +462,7 @@ api.client_set_position(c, "def")        // Set courtroom position
 api.client_get_ipid(c)                   // Hashed IP identifier (String)
 api.client_get_ooc_name(c)               // Current OOC name, "" if unset (String)  [v3]
 api.client_is_hidden(c)                  // Hidden from player lists? (SHADOW role) (bool)  [v3]
+api.client_get_ip(c)                     // Raw IP — v4 dotted-quad or v6 hex (String)  [v4]
 
 // Server/Area operations
 api.find_client(uid)                     // Find client by UID (void*)
@@ -434,6 +501,10 @@ api.packet_get_field(pkt, 0)             // Get field by index (String)
 api.client_kick(c)                       // Disconnect a player
 api.client_mute(c)                       // Mute IC chat
 api.client_unmute(c)                     // Unmute IC chat
+api.broadcast_perm_raw("data", perms)    // Raw packet to clients with ALL bits of perms (role-gated)  [v4]
+
+// Connection access control (see "Registering Connection Filters")
+api.register_conn_filter(fn, name)       // Reject/allow each inbound connection at accept time  [v4]
 
 // Command arguments
 api.args_split(args, &buf[0], max)       // Quote-aware split into buf (String[]); returns token count
@@ -1790,8 +1861,10 @@ usually manifests as a crash or silent corruption.
 3. Rebuild and redeploy your plugin.
 
 The production plugins in `OPTIONAL Plugins/` are always kept in sync with the
-server's struct. Copy the struct from `case_manager.c3` for the v2 field set, or
-from **`player_list.c3`** if you need the v3 lifecycle fields at the end.
+server's struct. Copy the struct from `case_manager.c3` for the v2 field set,
+from `player_list.c3` if you need the v3 lifecycle fields, or from
+**`ip_guard.c3`** for the full current struct including the v4 connection-filter
+fields at the end.
 
 **The append-only guarantee (why old plugins keep working).** Whisker only ever
 **appends** new fields to the *end* of `PluginAPI` — existing fields never move
@@ -1799,11 +1872,13 @@ or change type. So a plugin compiled against an older, shorter struct still find
 every function pointer it knows about at the right offset; it simply stops
 reading before the newer fields and never touches them. That means **already-compiled
 `.dll`/`.so` plugins keep working across these additions with no recompile** — v1
-→ v2 (+15), → `args_split`, → `to_lower`, and now → v3's three lifecycle fields
-(`register_lifecycle_hook`, `client_get_ooc_name`, `client_is_hidden`) have all
-been added this way. The only thing you must never do in your own struct copy is
-*insert* or *reorder* fields. You only need to update your copy (and recompile)
-when you actually want to *call* something newly added.
+→ v2 (+15), → `args_split`, → `to_lower`, → v3's three lifecycle fields
+(`register_lifecycle_hook`, `client_get_ooc_name`, `client_is_hidden`), and now
+→ v4's three connection-filter fields (`client_get_ip`, `register_conn_filter`,
+`broadcast_perm_raw`) have all been added this way. The only thing you must never
+do in your own struct copy is *insert* or *reorder* fields. You only need to
+update your copy (and recompile) when you actually want to *call* something newly
+added.
 
 ## What the Extended API (v2) Adds
 
@@ -1866,6 +1941,31 @@ auto-roles on join, accurate "online now" tracking, and anything else that needs
 to follow players coming, going, and changing — driven by real events instead of
 polling. Backwards compatible exactly like v2: appended at the end, old plugins
 untouched.
+
+## What Connection Filters (v4) Add
+
+v3 and earlier all act on a client that has **already connected** — by the time
+any command, packet, or lifecycle hook fires, the server has accepted the socket
+and spent a handler thread on it. There was no way for a plugin to influence
+*whether a connection is accepted at all*, and no way to even see a client's real
+IP (only the one-way hashed IPID).
+
+v4 appends three fields to close that gap:
+
+| Field | Signature | Purpose |
+|-------|-----------|---------|
+| `client_get_ip` | `fn String(void*)` | The client's **raw** IP (v4 dotted-quad or v6 hex), not the hashed IPID. |
+| `register_conn_filter` | `fn void(fn bool(String), String)` | Subscribe a predicate the server calls for every inbound connection at accept time; return `true` to reject it before a thread is spawned. |
+| `broadcast_perm_raw` | `fn void(String, ulong)` | Send a pre-built packet only to connected clients holding all bits of a permission mask (role-gated staff notices). |
+
+See [Registering Connection Filters](#registering-connection-filters-v4) for the
+mechanics and `OPTIONAL Plugins/ip_guard.c3` for a full worked plugin.
+
+**What this unlocks:** IP / CIDR / ASN / country blocklists (shipped as the
+optional `ip_guard` plugin), allow-lists, connection-rate policies, and any
+access control that should happen *before* a connection costs a thread — plus,
+via `broadcast_perm_raw`, role-gated staff alerting from any plugin. Backwards
+compatible exactly like v2/v3: appended at the end, old plugins untouched.
 
 ## Hookable Packet Headers
 

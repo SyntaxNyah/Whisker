@@ -454,4 +454,159 @@ anyone forking the server to add or remove it.
 
 ---
 
+### IP Guard
+
+**Compiled:** `Windows/ip_guard.dll` · `Linux/ip_guard.so`
+**Source:** `ip_guard.c3`
+
+Blocks connections by **IP address, CIDR range, ASN (whole networks), and country**
+— for both **IPv4 and IPv6** — at the moment they connect, before the server
+spends a thread on them. It is the reference example of a **connection-filter**
+plugin (the v4 `register_conn_filter` hook): it runs on the accept path, exactly
+where the built-in IPID ban runs, so a blocked address costs nothing more than a
+fast lookup.
+
+**Why you'd want this**
+
+AO servers attract a specific kind of abuse that per-user bans lose to:
+
+- **Datacenter / cloud abuse.** One bad actor cycles through a provider's
+  address pool (a fresh IP every reconnect). Block the provider's **ASN** or
+  CIDRs and the whole pool is gone at once, instead of chasing one address at a
+  time.
+- **VPN / proxy "countries."** For many communities, certain countries appear in
+  AO traffic almost entirely as commercial VPN exit nodes with ~zero real
+  players. An operator who knows their community can drop those **countries**
+  wholesale and cut a large amount of ban-evasion and spam at the door.
+- **Ban evasion.** A user hopping addresses within one ISP or region is stopped
+  by a range/ASN/country rule where a single-IP ban never would be.
+
+This is deliberately a blunt, opinionated tool — country/ASN blocking **will**
+also block innocent people who share an ASN or country with abusers, and the
+right policy differs wildly between servers. That's exactly why it's an **opt-in
+plugin** and not core behaviour: servers that want it drop the file in; everyone
+else never thinks about it.
+
+**Plug-and-play — no database to install**
+
+ASN/country rules need to know which network/country an IP belongs to. The
+plugin handles that itself: on first run a background thread downloads the small
+public-domain [iptoasn](https://iptoasn.com) datasets (redistributed by
+[sapics/ip-location-db](https://github.com/sapics/ip-location-db), PDDL-1.0, no
+API key) with `curl`, caches them next to your config, and refreshes them every
+`update_interval_days`. You just pick countries/ASNs; the plugin fetches the
+data. If the download fails (offline / no curl), it says so loudly and runs with
+your `ip`/`cidr`/`allow` rules only — those need no database.
+
+**Configuration — `config/ip_guard.txt`**
+
+A plain text file (auto-created with a commented template on first run). One rule
+per line:
+
+```text
+ip       203.0.113.7          # a single address (v4 or v6)
+cidr     203.0.113.0/24       # a CIDR range
+cidr     2001:db8::/32        # IPv6 works too
+asn      AS14061              # every range announced by an ASN
+country  CN                   # every range geolocated to a country (ISO 3166-1)
+allow    198.51.100.10        # exception: never block this (wins over all)
+```
+
+Options (all optional, sensible defaults): `alert_blocked`, `alert_permission`,
+`alert_interval_sec`, `block_unknown`, `auto_update`, `update_interval_days`, and
+overridable `*_db_url` source URLs. See the comments in the generated file or the
+[Mod Guide](../docs/MOD_GUIDE.md#ip-guard-plugin) for the full list.
+
+**Commands** (require the **BAN** permission):
+
+| Command | Usage | Description |
+|---------|-------|-------------|
+| `/ipban` | `/ipban <ip\|cidr> [note]` | Block an address/range live (also saved to the config file) |
+| `/ipunban` | `/ipunban <ip\|cidr>` | Remove a live `/ipban` rule |
+| `/ipbanlist` | `/ipbanlist` | Show rule counts, geo-DB status, total blocked |
+| `/ipbanlog` | `/ipbanlog` | Show the most recent blocked connection attempts |
+| `/ipbanreload` | `/ipbanreload` | Re-read the config + refresh the geo/ASN database |
+
+**Optional staff alerts (off by default)**
+
+Set `alert_blocked true` to have the server post an OOC notice when it blocks a
+connection — handy as proof the filter works and to learn which ranges to add
+next ("*4 connections blocked — latest 203.0.113.9 (country CN)*"). Alerts are
+**coalesced on a timer**, never sent per-connection, so enabling them can't slow
+the accept path even under a flood. `alert_permission` gates **which role sees
+them** (a permissions bitmask, matching `roles.toml`; defaults to the BAN bit).
+
+**Setup**
+
+1. Drop `ip_guard.dll` / `ip_guard.so` into your server's `plugins/` directory.
+2. Restart. A commented `config/ip_guard.txt` template is created on first run.
+3. Edit `config/ip_guard.txt`, uncomment the rules you want, and `/ipbanreload`.
+
+**To remove it:** delete the `.dll` / `.so` from `plugins/` and restart.
+
+**IPv6 note.** IP Guard matches IPv6 fully, but your server only *receives* IPv6
+if it listens on one — set `[server] addr = "::"`. On Linux that also accepts
+IPv4 clients (as v4-mapped, which the core normalises back to dotted-quad); on
+Windows `::` is IPv6-only by default. IPs arriving through a trusted reverse
+proxy (X-Forwarded-For / CF-Connecting-IP) are matched as forwarded, so
+geo-blocking works behind Cloudflare/nginx regardless of the listen socket.
+
+**Two ban systems, no conflict.** The core `/ban` keys on the hashed **IPID**
+(great for "ban this user"); IP Guard keys on the **real address / range / ASN /
+country** (great for "ban this network"). They run independently and don't
+interfere.
+
+**Why is this a plugin and not built-in?**
+
+Country/ASN blocking is heavy, opinionated, and community-specific — forcing it
+on every server would be wrong. As a plugin, the policy lives entirely outside
+the core: the core only gained a small, dormant, general-purpose connection-filter
+hook (useful to any plugin), and all the "who to block" logic stays opt-in.
+
+**Performance**
+
+- When no connection filter is registered the core does **zero** extra work.
+- With the plugin loaded, each connection is an O(log n) binary search over
+  sorted, de-duplicated ranges (a handful of comparisons even for country-scale
+  lists) plus a tiny scan of ad-hoc `/ipban` entries — and a blocked connection
+  never costs a thread or 256 KB pool, so it's a net *saving* under abuse.
+- Downloading/parsing the database and sending alerts happen on a background
+  thread, never on the accept path.
+
+**Design notes (for developers):**
+
+- Built on the **connection-filter hook** (`register_conn_filter`, v4) — the
+  filter runs at accept time and returns "block/allow". It also uses the v4
+  `client_get_ip` (real address, not the hashed IPID) and `broadcast_perm_raw`
+  (role-gated staff alerts).
+- IPv4 and IPv6 share one 128-bit code path (IPv4 is stored as a v4-mapped
+  address), so there is a single parse/search implementation.
+- The filter is **allocation-free** — it runs on the accept thread where the
+  plugin's temp allocator isn't initialised, so it only touches stack and
+  pre-built tables (same discipline as `player_list`).
+- Tables are lockless, matching the rest of the server: the operator's explicit
+  `ip`/`cidr`/`allow` rules are built once at startup and never blink; the geo
+  tables are rebuilt on a background thread publishing their count last; ad-hoc
+  `/ipban` entries are append-only.
+- Talks to the server only through the `PluginAPI` function pointers — no imports
+  from the server source.
+
+**Limits:**
+
+| Limit | Value |
+|-------|-------|
+| Geo ranges per source (country/ASN), IPv4 | 300,000 |
+| Geo ranges per source (country/ASN), IPv6 | 150,000 |
+| Manual `ip`/`cidr` rules (config) | 16,384 |
+| `allow` rules (config) | 8,192 |
+| Ad-hoc `/ipban` rules (runtime) | 1,024 |
+| Selected countries / ASNs | 256 / 512 |
+| Recent-blocks log (`/ipbanlog`) | 64 (ring buffer) |
+
+**Data credit:** geolocation/ASN data from [iptoasn.com](https://iptoasn.com)
+via [sapics/ip-location-db](https://github.com/sapics/ip-location-db)
+(PDDL-1.0 — public domain, no attribution required; credited here as a courtesy).
+
+---
+
 See the [Plugin Dev Guide](../plugins/PLUGIN%20DEV%20GUIDE%20README.md) for writing your own plugins.

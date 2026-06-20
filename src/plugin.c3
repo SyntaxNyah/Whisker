@@ -239,6 +239,51 @@ alias ApiRegisterLifecycleHookFn = fn void(ApiLifecycleHook hook, String plugin_
 alias ApiClientGetOocNameFn      = fn String(void* client);
 alias ApiClientIsHiddenFn        = fn bool(void* client);
 
+// -- Connection filtering + raw IP + role-gated broadcast (v4) --
+//
+// SAME append-only ABI rule (see the note on the PluginAPI struct below): all
+// three are added at the very end, so plugins compiled against v1/v2/v3 never
+// read them and keep working untouched.
+//
+// These three exist for connection-level access control (the optional
+// `ip_guard` plugin: IP / CIDR / ASN / country blocking) but are deliberately
+// general primitives, not one plugin's private hooks:
+//
+//   client_get_ip      : the client's RAW IP address — IPv4 dotted-quad
+//                        ("a.b.c.d") or IPv6 hex ("2001:db8::1"), or "unknown"
+//                        when it couldn't be read. Every earlier API only ever
+//                        exposed the *hashed* IPID (client_get_ipid); a plugin
+//                        that wants to reason about CIDR ranges, geolocation, or
+//                        ASNs needs the real address, which lives in the client
+//                        but was never surfaced. Both families are supported
+//                        (see extract_peer_ip in server.c3); proxy-header IPs
+//                        (X-Forwarded-For / CF-Connecting-IP) pass through
+//                        verbatim and may be either family.
+//
+//   register_conn_filter : subscribe a predicate that the server calls for every
+//                        inbound connection, at accept time, BEFORE a handler
+//                        thread (and its 256 KB pool) is spawned — the same spot
+//                        the built-in IPID ban check runs. The filter receives
+//                        the raw IP and returns true to REJECT the connection
+//                        (socket closed immediately) or false to allow it. This
+//                        is what lets an optional plugin drop abusive
+//                        datacenters / countries without the connection ever
+//                        costing a thread. It MUST be cheap and allocation-free
+//                        (it runs on the accept loop): do O(log n) lookups, not
+//                        network calls or broadcasts.
+//
+//   broadcast_perm_raw : send a pre-built wire packet to every connected client
+//                        whose permissions include ALL bits of `perms` (e.g.
+//                        commands::PERM_BAN). Mirrors the core `broadcast`, but
+//                        role-gated — for staff-only notifications such as
+//                        ip_guard's "a blocked range tried to connect" alert.
+//                        Deliver these OFF the accept path (e.g. from a plugin
+//                        timer/thread): it scans the whole client list.
+alias ApiClientGetIpFn        = fn String(void* client);
+alias ApiConnectionFilter     = fn bool(String ip);
+alias ApiRegisterConnFilterFn = fn void(ApiConnectionFilter filter, String plugin_name);
+alias ApiBroadcastPermRawFn   = fn void(String data, ulong perms);
+
 // ============================================================
 // Plugin API — passed to plugins during init
 // ============================================================
@@ -316,10 +361,20 @@ struct PluginAPI {
     // exact offset, so plugins compiled against v1/v2 (which declare a shorter
     // PluginAPI) stop reading at to_lower and never touch these. Existing
     // compiled .dll/.so plugins therefore keep working with no recompile.
-    // New fields MUST always be added here, at the end — never inserted.
     ApiRegisterLifecycleHookFn register_lifecycle_hook;
     ApiClientGetOocNameFn      client_get_ooc_name;
     ApiClientIsHiddenFn        client_is_hidden;
+
+    // Appended after the v3 block (v4) — raw-IP access, the accept-time
+    // connection filter, and a role-gated raw broadcast. SAME append-only ABI
+    // rule: these are the current tail, so the next new field goes AFTER
+    // broadcast_perm_raw — never insert or reorder. Plugins compiled against
+    // v1/v2/v3 stop reading at client_is_hidden and never touch these three, so
+    // every shipped .dll/.so keeps working with no recompile.
+    // New fields MUST always be added here, at the end — never inserted.
+    ApiClientGetIpFn           client_get_ip;
+    ApiRegisterConnFilterFn    register_conn_filter;
+    ApiBroadcastPermRawFn      broadcast_perm_raw;
 }
 
 // ============================================================
@@ -354,6 +409,18 @@ struct PluginLifecycleHook {
 }
 
 // ============================================================
+// Registered connection filter (v4)
+// ============================================================
+//
+// Called for every inbound connection at accept time (see on_connection and
+// server::handle_new_connection). The filter returns true to REJECT.
+
+struct PluginConnFilter {
+    ApiConnectionFilter filter;
+    String              plugin_name;
+}
+
+// ============================================================
 // Plugin Manager
 // ============================================================
 
@@ -374,6 +441,9 @@ struct PluginManager {
     PluginLifecycleHook[MAX_PLUGIN_HOOKS] lifecycle_hooks;
     int                                    lifecycle_hook_count;
 
+    PluginConnFilter[MAX_PLUGIN_HOOKS]    conn_filters;
+    int                                    conn_filter_count;
+
     // Runtime handles for hot reload
     void*[MAX_PLUGINS]                   handles;       // dlopen/LoadLibrary handles
     PluginShutdownFn[MAX_PLUGINS]        shutdown_fns;  // Shutdown callbacks
@@ -385,6 +455,7 @@ fn PluginManager new_manager() {
     pm.command_count = 0;
     pm.hook_count = 0;
     pm.lifecycle_hook_count = 0;
+    pm.conn_filter_count = 0;
     return pm;
 }
 
@@ -552,6 +623,7 @@ fn void unload_all(PluginManager* pm) {
     pm.command_count = 0;
     pm.hook_count    = 0;
     pm.lifecycle_hook_count = 0;
+    pm.conn_filter_count    = 0;
 
     io::printn("[plugins] All plugins unloaded.");
 }
@@ -609,4 +681,20 @@ fn void fire_lifecycle(PluginManager* pm, client::Client* c, int event) {
     for (int i = 0; i < pm.lifecycle_hook_count; i++) {
         pm.lifecycle_hooks[i].hook(c, event);
     }
+}
+
+// Ask every registered connection filter whether this inbound IP should be
+// rejected. Returns true as soon as ANY filter says "block" (short-circuit),
+// so the caller can close the socket before spending a thread on it. Called
+// from server::handle_new_connection on the accept path — when no plugin has
+// registered a filter (conn_filter_count == 0) this is a single comparison and
+// zero iterations, i.e. no cost on the hot path for servers without the plugin.
+// `ip` is the raw client address (already proxy-resolved by the caller).
+fn bool on_connection(PluginManager* pm, String ip) {
+    for (int i = 0; i < pm.conn_filter_count; i++) {
+        if (pm.conn_filters[i].filter(ip)) {
+            return true; // Rejected
+        }
+    }
+    return false;
 }
