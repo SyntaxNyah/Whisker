@@ -47,7 +47,8 @@
       "Bash(curl -sL --max-time 60 -r 0-200 \"https://github.com/sapics/ip-location-db/releases/download/latest/iptoasn-country-ipv6.csv\")",
       "Bash(C:\\\\c3c\\\\c3\\\\c3c.exe build *)",
       "PowerShell(Get-Process *)",
-      "Bash(git checkout *)"
+      "Bash(git checkout *)",
+      "Bash(git add *)"
     ]
   }
 }
