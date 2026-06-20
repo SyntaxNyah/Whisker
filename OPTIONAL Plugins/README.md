@@ -609,4 +609,166 @@ via [sapics/ip-location-db](https://github.com/sapics/ip-location-db)
 
 ---
 
+### AFK
+
+**Compiled:** `Windows/afk.dll` · `Linux/afk.so`
+**Source:** `afk.c3`
+
+Marks idle or away players as **AFK** and shows it where other players look: a
+`[AFK]` tag after their name in `/ga` and `/gas`, and — when the `player_list`
+plugin is also installed — on the 2.11 player-list widget.
+
+- **Auto-AFK:** a player who hasn't typed for `timeout_seconds` is marked AFK.
+- **Manual:** `/afk` marks you AFK immediately.
+- **Return:** typing anything (IC or OOC) clears your AFK automatically.
+
+**Configuration — `config.toml` `[afk]`** (every part is a toggle):
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `auto_afk` | `true` | The inactivity timer. **Set `false` to keep ONLY `/afk`.** |
+| `timeout_seconds` | `300` | Idle seconds before auto-AFK |
+| `manual_command` | `true` | Enable the `/afk` command |
+| `playerlist_indicator` | `true` | Show `[AFK]` on the 2.11 player list (needs `player_list`) |
+| `gas_indicator` | `true` | Show `[AFK]` in `/ga` and `/gas` |
+| `announce` | `false` | Broadcast "X is now AFK / back" to the area |
+| `label` | `[AFK]` | The tag text |
+
+You can run auto-AFK only, manual `/afk` only, both, or neither.
+
+**Commands:**
+
+| Command | Description |
+|---------|-------------|
+| `/afk` | Mark yourself AFK. Type anything to return. |
+
+**Setup:**
+
+1. Drop `afk.dll` / `afk.so` into your server's `plugins/` directory.
+2. (Optional) adjust the `[afk]` section in `config/config.toml`.
+3. Restart.
+
+**To remove it:** delete the `.dll` / `.so` from `plugins/` and restart.
+
+**Why is this a plugin and not built-in?**
+
+AFK is genuinely divisive. Plenty of communities think `/afk` is pointless —
+"you can already tell someone's gone when they stop talking" — and don't want an
+auto-timer quietly tagging lurkers. Others want a clear away indicator. Making it
+opt-in (and every part a toggle) means each server decides; the core stays
+neutral. The only core support it needs is a small, generic per-client **status
+tag** (added in the v5 Plugin API) that `/ga` and `/gas` render — useful to any
+plugin, dormant when unused.
+
+**Design notes (for developers):**
+
+- A roster (uid → last-activity / is-afk) is driven by the core's **lifecycle
+  hooks** (JOIN/LEAVE), so even a silent lurker is tracked from the moment they
+  join. `MS` (IC) and `CT` (OOC) **packet hooks** detect typing — they return
+  `false`, so they never consume chat or commands.
+- The `/gas` tag uses the v5 **`client_set_status_tag`** API, so the core keeps
+  rendering `/gas` from its own complete client list — the tag stays correct even
+  after a `/reload` (a plugin re-implementing `/gas` from a roster could not,
+  since a reload empties the roster).
+- The player-list tag is a `PU` packet folded into the OOC-name field (the 2.11
+  list has no dedicated status field); a background thread runs the inactivity
+  timer and keeps that tag refreshed.
+- State is lockless, matching the rest of the server. AFK state lives only in the
+  plugin, so a `/reload` clears it (everyone shows not-AFK until the timer
+  re-fires) — the same limitation `player_list` has.
+
+**Limits:**
+
+| Limit | Value |
+|-------|-------|
+| Tracked players | 1024 (matches the server's client cap) |
+| Label length | 31 bytes |
+
+---
+
+### Lockdown
+
+**Compiled:** `Windows/lockdown.dll` · `Linux/lockdown.so`
+**Source:** `lockdown.c3`
+
+A moderator **"known players only"** switch. While lockdown is ON, any IPID that
+has **never joined before** is turned away with a friendly *"this is not a ban,
+try again later"* notice; everyone who has joined before still gets in. It's a
+door to slam shut during an incident so a bad actor can't keep cycling fresh
+IPs/IPIDs to dodge bans — without locking out your regulars.
+
+**How it learns who's "known":** the plugin remembers every IPID that
+successfully joins, in a persistent file (`config/lockdown_known.txt`). It builds
+this allowlist automatically as people play — you never curate it by hand.
+
+> ⚠️ **Let it learn first.** The allowlist only contains IPIDs that joined *while
+> this plugin was installed*. If you enable lockdown right after installing it,
+> the list is empty and you'll lock out **everyone, including your regulars**.
+> Install it, let people play for a while, check `/lockdown status` shows a
+> healthy count, then use it. `/lockdown on` always reports the count it's about
+> to enforce as a safety check.
+
+**Commands** (require a mod permission — `permission` in config, default = BAN):
+
+| Command | Description |
+|---------|-------------|
+| `/lockdown on [duration]` | Known IPIDs only. Optional auto-off timer, e.g. `/lockdown on 30m`. |
+| `/lockdown off` | Back to normal — everyone can join. |
+| `/lockdown status` | Show on/off, time remaining, and how many IPIDs are known. |
+| `/lockdown purge` | Wipe the known-IPID list entirely (start fresh). |
+
+When lockdown toggles, a notice is posted in OOC to **moderators only**.
+
+**Configuration — `config.toml` `[lockdown]`:**
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `permission` | `4` | Permission bits to use `/lockdown` (4 = BAN; matches `roles.toml`) |
+| `default_duration` | `0` | `/lockdown on` with no time: `0` = until `/lockdown off` (e.g. `30m`, `2h`) |
+| `announce` | `true` | Post a mods-only OOC notice when lockdown toggles |
+| `persist` | `true` | Remember known IPIDs across restarts (`config/lockdown_known.txt`) |
+| `message` | *(sane default)* | The notice shown to a blocked new IPID |
+
+**Setup:**
+
+1. Drop `lockdown.dll` / `lockdown.so` into your server's `plugins/` directory.
+2. Restart and **let it run** so it learns your regulars' IPIDs.
+3. When you need it: a mod runs `/lockdown on` (check the reported known count first).
+
+**To remove it:** delete the `.dll` / `.so` from `plugins/` and restart.
+
+**Why is this a plugin and not built-in?**
+
+A "known IPIDs only" lockdown is a heavy, situational tool. Private/whitelisted
+servers don't need it, many public servers never want it, and it **will** turn
+away genuine first-time visitors while it's on. IPID is a per-IP hash, so it's
+coarse by design (a regular on a new network looks "new"). Opt-in keeps it out of
+everyone else's way. It complements — doesn't replace — the core ban list ("ban
+this user") and `ip_guard` ("block this network/country").
+
+**Performance:** the gate runs once per *join* (not per packet), an O(n) scan of
+the known set that's microseconds at human join rates; volumetric abuse is the
+core's connection rate-limit / flood-autoban job (and `ip_guard`'s), not
+lockdown's. Nothing runs on the per-packet path.
+
+**Design notes (for developers):**
+
+- One **lifecycle JOIN hook** does both jobs: record new IPIDs, and (during
+  lockdown) kick unknown ones with a custom reason via the v6 **`client_kick_msg`**
+  API. Gating at JOIN (not the raw socket) is deliberate — `KK` with a custom
+  reason is reliably shown there, which is what makes the "not a ban" message
+  actually reach the user. The brief player-list flicker on a blocked newcomer is
+  the accepted cost.
+- The mods-only notice uses the v4 **`broadcast_perm_raw`** (role-gated).
+- The known set is append-only + linear scan, lockless like the rest of the
+  server; a background thread runs the auto-off timer.
+
+**Limits:**
+
+| Limit | Value |
+|-------|-------|
+| Known IPIDs | 131,072 |
+
+---
+
 See the [Plugin Dev Guide](../plugins/PLUGIN%20DEV%20GUIDE%20README.md) for writing your own plugins.

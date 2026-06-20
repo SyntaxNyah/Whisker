@@ -1370,6 +1370,18 @@ fn String first_token(String args) {
     return s[0..i - 1];
 }
 
+// Command handlers run on the server's per-client thread, where this plugin's
+// OWN temp allocator is not initialised — so the string::tformat / io::printfn
+// calls in the handlers above would panic. These wrappers open a temp-allocator
+// scope around each (the approach casing.c3 uses). The connection filter and
+// background thread are allocation-free, so only the commands need wrapping.
+const usz CMD_POOL = 1024 * 64;
+fn void w_ipban(void* c, String a)       { @pool_init(mem, CMD_POOL) { cmd_ipban(c, a); }; }
+fn void w_ipunban(void* c, String a)     { @pool_init(mem, CMD_POOL) { cmd_ipunban(c, a); }; }
+fn void w_ipbanlist(void* c, String a)   { @pool_init(mem, CMD_POOL) { cmd_ipbanlist(c, a); }; }
+fn void w_ipbanlog(void* c, String a)    { @pool_init(mem, CMD_POOL) { cmd_ipbanlog(c, a); }; }
+fn void w_ipbanreload(void* c, String a) { @pool_init(mem, CMD_POOL) { cmd_ipbanreload(c, a); }; }
+
 // ============================================================
 // Plugin interface (exported)
 // ============================================================
@@ -1412,11 +1424,11 @@ fn bool whisker_plugin_init(PluginAPI* plugin_api) @export("whisker_plugin_init"
     api.register_conn_filter(&conn_filter, PLUGIN_NAME);
 
     // Register management commands (BAN permission).
-    api.register_command("ipban", &cmd_ipban, PERM_BAN, "Block an IP or CIDR range", PLUGIN_NAME);
-    api.register_command("ipunban", &cmd_ipunban, PERM_BAN, "Remove a live /ipban rule", PLUGIN_NAME);
-    api.register_command("ipbanlist", &cmd_ipbanlist, PERM_BAN, "Show IP Guard rule counts", PLUGIN_NAME);
-    api.register_command("ipbanlog", &cmd_ipbanlog, PERM_BAN, "Show recent blocked connections", PLUGIN_NAME);
-    api.register_command("ipbanreload", &cmd_ipbanreload, PERM_BAN, "Reload config + refresh geo database", PLUGIN_NAME);
+    api.register_command("ipban", &w_ipban, PERM_BAN, "Block an IP or CIDR range", PLUGIN_NAME);
+    api.register_command("ipunban", &w_ipunban, PERM_BAN, "Remove a live /ipban rule", PLUGIN_NAME);
+    api.register_command("ipbanlist", &w_ipbanlist, PERM_BAN, "Show IP Guard rule counts", PLUGIN_NAME);
+    api.register_command("ipbanlog", &w_ipbanlog, PERM_BAN, "Show recent blocked connections", PLUGIN_NAME);
+    api.register_command("ipbanreload", &w_ipbanreload, PERM_BAN, "Reload config + refresh geo database", PLUGIN_NAME);
 
     // Geo download/build + alert flushing happen off the hot path.
     start_background();

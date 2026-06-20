@@ -442,7 +442,32 @@ log_directory = "logs"                # Log file directory
 
 [plugins]
 directory = "plugins"                 # Plugin directory
+
+# Read by the OPTIONAL afk plugin (ignored if it isn't installed). Every part
+# is a toggle — see the afk entry in OPTIONAL Plugins/README.md.
+[afk]
+auto_afk = true                       # the inactivity timer (false = keep ONLY /afk)
+timeout_seconds = 300                 # idle seconds before auto-AFK
+manual_command = true                 # enable the /afk command
+playerlist_indicator = true           # show [AFK] on the 2.11 player list (needs player_list)
+gas_indicator = true                  # show [AFK] in /ga and /gas
+announce = false                      # broadcast "X is now AFK / back" to the area
+label = "[AFK]"                       # the tag text
+
+# Read by the OPTIONAL lockdown plugin (ignored if it isn't installed).
+[lockdown]
+permission = 4                        # permission bits to use /lockdown (4 = ban)
+default_duration = "0"                # /lockdown on with no time: 0 = until /lockdown off
+announce = true                       # mods-only OOC notice when lockdown toggles
+persist = true                        # remember known IPIDs across restarts
+# message = "..."                     # notice shown to a blocked new IPID (sane default)
 ```
+
+> **Plugin config sections.** `[afk]` (and other plugin sections like
+> `[advertiser]`) are read by their optional plugins, not the core — the core
+> ignores sections it doesn't recognise, so they're harmless when the plugin
+> isn't installed. The optional `ip_guard` plugin uses its own `config/ip_guard.txt`
+> instead; see each plugin's entry in the [Optional Plugins README](../OPTIONAL%20Plugins/README.md).
 
 ### Characters and music
 
@@ -591,6 +616,35 @@ O(log n) lookup and never cost a thread, so this *reduces* load under abuse;
 when the plugin isn't installed the core does no extra work at all. See the
 [Optional Plugins README](../OPTIONAL%20Plugins/README.md#ip-guard) for the full
 reference.
+
+### Lockdown plugin
+
+The **optional `lockdown` plugin** is a "known players only" switch for incidents.
+While lockdown is ON, any IPID that has **never joined before** is turned away with
+a *"this is not a ban, try again later"* notice; everyone who has joined before
+still gets in. It's the tool for when a bad actor keeps cycling fresh IPs/IPIDs to
+dodge bans — slam the door without locking out your regulars.
+
+Drop `lockdown.dll` / `lockdown.so` into `plugins/` and **let it run for a while
+first** — it learns your regulars' IPIDs (saved to `config/lockdown_known.txt`) as
+they play. Enabling it on an empty list locks out everyone, so `/lockdown on`
+always reports the known count it's about to enforce as a safety check.
+
+**Commands** (need a mod permission — `[lockdown] permission`, default = BAN):
+
+| Command | Description |
+|---------|-------------|
+| `/lockdown on [duration]` | Known IPIDs only. Optional auto-off, e.g. `/lockdown on 30m`. |
+| `/lockdown off` | Back to normal — everyone can join. |
+| `/lockdown status` | Show on/off, time left, and how many IPIDs are known. |
+| `/lockdown purge` | Wipe the known-IPID list entirely. |
+
+A **mods-only** OOC notice is posted whenever lockdown toggles. Config lives in
+`config.toml` under `[lockdown]` (permission, default/auto duration, announce,
+persist, message). See the
+[Optional Plugins README](../OPTIONAL%20Plugins/README.md#lockdown) for the full
+reference. This complements the core `/ban` (ban a user) and `ip_guard` (block a
+network/country) — it doesn't replace either.
 
 ---
 

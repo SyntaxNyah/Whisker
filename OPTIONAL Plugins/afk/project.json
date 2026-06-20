@@ -1,0 +1,13 @@
+{
+    "version": "1.0.0",
+    "authors": ["Whisker Community"],
+    "langrev": "1",
+    "warnings": ["no-unused"],
+    "targets": {
+        "afk": {
+            "type": "dynamic-lib",
+            "sources-override": ["../afk.c3"],
+            "linked-libraries": ["c"]
+        }
+    }
+}

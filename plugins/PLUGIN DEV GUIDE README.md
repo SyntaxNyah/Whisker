@@ -463,6 +463,8 @@ api.client_get_ipid(c)                   // Hashed IP identifier (String)
 api.client_get_ooc_name(c)               // Current OOC name, "" if unset (String)  [v3]
 api.client_is_hidden(c)                  // Hidden from player lists? (SHADOW role) (bool)  [v3]
 api.client_get_ip(c)                     // Raw IP — v4 dotted-quad or v6 hex (String)  [v4]
+api.client_set_status_tag(c, "[AFK]")    // Set a tag shown after the name in /ga and /gas ("" clears)  [v5]
+api.client_get_status_tag(c)             // Get the current status tag (String)  [v5]
 
 // Server/Area operations
 api.find_client(uid)                     // Find client by UID (void*)
@@ -498,7 +500,8 @@ api.packet_get_field_count(pkt)          // Number of fields in packet (int)
 api.packet_get_field(pkt, 0)             // Get field by index (String)
 
 // Moderation
-api.client_kick(c)                       // Disconnect a player
+api.client_kick(c)                       // Disconnect a player (fixed reason)
+api.client_kick_msg(c, "reason")         // Disconnect a player with a custom KK reason  [v6]
 api.client_mute(c)                       // Mute IC chat
 api.client_unmute(c)                     // Unmute IC chat
 api.broadcast_perm_raw("data", perms)    // Raw packet to clients with ALL bits of perms (role-gated)  [v4]
@@ -1637,10 +1640,12 @@ sleeps — runs straight into the temp-allocator-across-`dlopen` segfault from
 [Threading in Plugins](#threading-in-plugins).
 
 The robust alternative is to **drive time from a packet hook** instead of a
-thread. Hooks run on the server's own packet threads — the same threads that run
-your command handlers — so the temp allocator behaves normally there. Hook a
-frequent packet such as `MS` (sent on every IC message) and check the clock each
-time it fires:
+thread. Hook a frequent packet such as `MS` (sent on every IC message) and check
+the clock each time it fires. (Heads-up: like *all* plugin handlers, the hook
+runs on a server thread where your plugin's own temp allocator isn't initialised
+— see [Threading in Plugins](#threading-in-plugins) — so build any message in
+your **command** handler under a `@pool_init` scope and stash the bytes for the
+hook to broadcast, exactly as below.)
 
 ```c3
 import std::time;
@@ -1657,9 +1662,10 @@ fn void start_something(void* c) {
     pending      = true;
     started_us   = (long)time::now();
     pending_area = api.client_get_area(c);
-    // Build any string the hook will need NOW (a command handler runs on a
-    // server thread, so the temp allocator is safe) and copy it into a buffer
-    // you own. The hook then only has to broadcast those bytes.
+    // Build any string the hook will need NOW. This runs from a command handler
+    // that you've wrapped in @pool_init (see Threading), so the plugin's temp
+    // allocator is available here; copy the result into a buffer you own. The
+    // hook then only has to broadcast those bytes (it has no temp allocator).
     String msg = string::tformat("The challenge expired — nobody joined in time.");
     expiry_len = store_str(&expiry_buf[0], 160, msg);
 }
@@ -1862,9 +1868,10 @@ usually manifests as a crash or silent corruption.
 
 The production plugins in `OPTIONAL Plugins/` are always kept in sync with the
 server's struct. Copy the struct from `case_manager.c3` for the v2 field set,
-from `player_list.c3` if you need the v3 lifecycle fields, or from
-**`ip_guard.c3`** for the full current struct including the v4 connection-filter
-fields at the end.
+from `player_list.c3` if you need the v3 lifecycle fields, from `ip_guard.c3` for
+the v4 connection-filter fields, from `afk.c3` for the v5 status-tag fields, or
+from **`lockdown.c3`** for the full current struct including the v6
+`client_kick_msg` field at the end.
 
 **The append-only guarantee (why old plugins keep working).** Whisker only ever
 **appends** new fields to the *end* of `PluginAPI` — existing fields never move
@@ -1873,12 +1880,13 @@ every function pointer it knows about at the right offset; it simply stops
 reading before the newer fields and never touches them. That means **already-compiled
 `.dll`/`.so` plugins keep working across these additions with no recompile** — v1
 → v2 (+15), → `args_split`, → `to_lower`, → v3's three lifecycle fields
-(`register_lifecycle_hook`, `client_get_ooc_name`, `client_is_hidden`), and now
+(`register_lifecycle_hook`, `client_get_ooc_name`, `client_is_hidden`),
 → v4's three connection-filter fields (`client_get_ip`, `register_conn_filter`,
-`broadcast_perm_raw`) have all been added this way. The only thing you must never
-do in your own struct copy is *insert* or *reorder* fields. You only need to
-update your copy (and recompile) when you actually want to *call* something newly
-added.
+`broadcast_perm_raw`), → v5's two status-tag fields (`client_set_status_tag`,
+`client_get_status_tag`), and now → v6's `client_kick_msg` have all been added
+this way. The only thing you must never do in your own struct copy is *insert* or
+*reorder* fields. You only need to update your copy (and recompile) when you
+actually want to *call* something newly added.
 
 ## What the Extended API (v2) Adds
 
@@ -1966,6 +1974,51 @@ optional `ip_guard` plugin), allow-lists, connection-rate policies, and any
 access control that should happen *before* a connection costs a thread — plus,
 via `broadcast_perm_raw`, role-gated staff alerting from any plugin. Backwards
 compatible exactly like v2/v3: appended at the end, old plugins untouched.
+
+## What the Status Tag (v5) Adds
+
+A plugin can attach a short label to a player — but the surfaces where you'd want
+it shown (`/ga`, `/gas`) are **built-in** commands that enumerate the core's own
+client list. A plugin can override those commands, but it can only enumerate
+players it has seen via lifecycle hooks — so after a `/reload` (JOIN already
+fired for everyone) its list would be empty and the command would render a nearly
+empty room. The fix is to let the core keep rendering and just carry a tag:
+
+| Field | Signature | Purpose |
+|-------|-----------|---------|
+| `client_set_status_tag` | `fn void(void*, String)` | Attach a short tag (e.g. `"[AFK]"`) to a client; `""` clears it. |
+| `client_get_status_tag` | `fn String(void*)` | Read the current tag. |
+
+The core renders the tag after the player's name in `/ga` and `/gas`. Nothing
+else reads it, and it is dormant (empty) unless a plugin sets it — so `/gas` is
+unchanged on servers without such a plugin.
+
+> **Lifetime:** the core stores the `String` you pass *by reference*, it does not
+> copy it. Pass a tag backed by a buffer that outlives the call (a `const`, a
+> module-level `static`), not a temp-allocator string — exactly as the `afk`
+> plugin keeps its label in a static buffer. Clear tags (`""`) in your
+> `whisker_plugin_shutdown` so a `/reload` doesn't leave a stale tag stuck on a
+> still-connected player.
+
+**What this unlocks:** away/AFK indicators (the optional `afk` plugin), plus any
+"badge" a plugin wants beside a name in the area lists (`[REC]` while recording,
+`[streaming]`, role flair, …) — reload-safe because the core owns the rendering.
+
+## What Custom-Reason Kick (v6) Adds
+
+`client_kick` disconnects a player with a fixed message ("Kicked by plugin.").
+That's fine for "go away," but useless when the *reason* is the point — "the
+server is in lockdown, this is not a ban, try again later." v6 appends one field:
+
+| Field | Signature | Purpose |
+|-------|-----------|---------|
+| `client_kick_msg` | `fn void(void*, String)` | Disconnect a client showing a custom `KK` reason. |
+
+It sends `KK#<message>#%` and marks the client disconnected — a single, reliably
+rendered disconnect dialog with your wording. The optional `lockdown` plugin uses
+it to turn away unknown IPIDs with a clear not-a-ban notice; `ip_guard` and any
+moderation plugin can use it for meaningful kick reasons too. Backwards
+compatible exactly like v2–v5: appended at the end, old plugins untouched.
 
 ## Hookable Packet Headers
 

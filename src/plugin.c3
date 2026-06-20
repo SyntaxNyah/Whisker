@@ -284,6 +284,25 @@ alias ApiConnectionFilter     = fn bool(String ip);
 alias ApiRegisterConnFilterFn = fn void(ApiConnectionFilter filter, String plugin_name);
 alias ApiBroadcastPermRawFn   = fn void(String data, ulong perms);
 
+// -- Per-client status tag (v5) --
+//
+// A short display tag a plugin can attach to a client (e.g. "[AFK]", "[REC]").
+// The core renders it after the player's name in /ga and /gas; nothing else in
+// the core reads it. Generic on purpose — any plugin can use it. "" clears it.
+// (The optional `afk` plugin uses this for its /gas marker — a core-rendered
+// tag stays correct across /reload, unlike a plugin re-implementing /gas from a
+// roster that a reload would empty.)
+alias ApiClientSetStatusTagFn = fn void(void* client, String tag);
+alias ApiClientGetStatusTagFn = fn String(void* client);
+
+// -- Custom-reason kick (v6) --
+//
+// Disconnect a client showing a custom KK reason, instead of the fixed message
+// client_kick uses. Generic — any plugin wanting a meaningful disconnect reason
+// (e.g. the `lockdown` plugin's "server in lockdown, not a ban, try again
+// later") uses this. Sends KK#<message>#% and marks the client disconnected.
+alias ApiClientKickMsgFn = fn void(void* client, String message);
+
 // ============================================================
 // Plugin API — passed to plugins during init
 // ============================================================
@@ -367,14 +386,25 @@ struct PluginAPI {
 
     // Appended after the v3 block (v4) — raw-IP access, the accept-time
     // connection filter, and a role-gated raw broadcast. SAME append-only ABI
-    // rule: these are the current tail, so the next new field goes AFTER
-    // broadcast_perm_raw — never insert or reorder. Plugins compiled against
-    // v1/v2/v3 stop reading at client_is_hidden and never touch these three, so
-    // every shipped .dll/.so keeps working with no recompile.
-    // New fields MUST always be added here, at the end — never inserted.
+    // rule: plugins compiled against v1/v2/v3 stop reading at client_is_hidden
+    // and never touch these three, so every shipped .dll/.so keeps working with
+    // no recompile.
     ApiClientGetIpFn           client_get_ip;
     ApiRegisterConnFilterFn    register_conn_filter;
     ApiBroadcastPermRawFn      broadcast_perm_raw;
+
+    // Appended after the v4 block (v5) — a per-client status tag the core
+    // renders in /ga and /gas. SAME append-only ABI rule. Plugins compiled
+    // against v1–v4 stop reading at broadcast_perm_raw and never touch these two.
+    ApiClientSetStatusTagFn    client_set_status_tag;
+    ApiClientGetStatusTagFn    client_get_status_tag;
+
+    // Appended after the v5 block (v6) — custom-reason kick. SAME append-only
+    // ABI rule: client_kick_msg is now the current tail, so the next new field
+    // goes AFTER it — never insert or reorder. Plugins compiled against v1–v5
+    // stop reading at client_get_status_tag and never touch this one.
+    // New fields MUST always be added here, at the end — never inserted.
+    ApiClientKickMsgFn         client_kick_msg;
 }
 
 // ============================================================

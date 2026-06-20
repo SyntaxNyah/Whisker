@@ -246,8 +246,10 @@ fn void cmd_ga(server::Server* srv, client::Client* c) {
         client::Client* other = srv.clients[i];
         if (other != null && other.joined && other.area_id == c.area_id) {
             String mod_label = other.is_moderator() ? " [MOD]" : "";
-            c.send_server_message(string::tformat("  [%d] %s (%s)%s",
-                other.uid, other.display_name(), other.char_name, mod_label));
+            // Optional plugin-set status tag (e.g. "[AFK]"); "" when none.
+            String tag = other.status_tag.len > 0 ? string::tformat(" %s", other.status_tag) : "";
+            c.send_server_message(string::tformat("  [%d] %s (%s)%s%s",
+                other.uid, other.display_name(), other.char_name, tag, mod_label));
         }
     }
 }
@@ -268,7 +270,9 @@ fn void cmd_gas(server::Server* srv, client::Client* c) {
         for (int j = 0; j < server::MAX_SERVER_CLIENTS; j++) {
             client::Client* other = srv.clients[j];
             if (other != null && other.joined && other.area_id == i) {
-                c.send_server_message(string::tformat("  [%d] %s", other.uid, other.display_name()));
+                // Optional plugin-set status tag (e.g. "[AFK]"); "" when none.
+                String tag = other.status_tag.len > 0 ? string::tformat(" %s", other.status_tag) : "";
+                c.send_server_message(string::tformat("  [%d] %s%s", other.uid, other.display_name(), tag));
             }
         }
     }

@@ -35,6 +35,11 @@ struct Client {
     String           ipid;
     String           ip_address;
 
+    // Optional short display tag a plugin can attach (e.g. "[AFK]"), rendered
+    // after the player's name in /ga and /gas. "" = none. Plugins set it via
+    // the PluginAPI client_set_status_tag; the core only renders it.
+    String           status_tag;
+
     // -- Character --
     int              char_id;
     String           char_name;
@@ -87,6 +92,7 @@ fn Client new_client(tcp::TcpSocket socket, String ip, bool is_websocket) {
         .hdid            = "",
         .ipid            = "",
         .ip_address      = ip,
+        .status_tag      = "",
 
         .char_id         = config::NO_CHAR_SELECTED,
         .char_name       = "",

@@ -1,0 +1,13 @@
+{
+    "version": "1.0.0",
+    "authors": ["Whisker Community"],
+    "langrev": "1",
+    "warnings": ["no-unused"],
+    "targets": {
+        "lockdown": {
+            "type": "dynamic-lib",
+            "sources-override": ["../lockdown.c3"],
+            "linked-libraries": ["c"]
+        }
+    }
+}

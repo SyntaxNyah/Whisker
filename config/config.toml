@@ -76,3 +76,24 @@ log_directory = "logs"
 
 [plugins]
 directory = "plugins"
+
+# Read by the OPTIONAL afk plugin (drop afk.dll / .so into plugins/). Ignored if
+# that plugin isn't installed. Every part is a toggle — run auto-AFK only, manual
+# /afk only, both, or neither, and choose which surfaces show the tag.
+[afk]
+auto_afk = true             # the inactivity timer (set false to keep ONLY /afk)
+timeout_seconds = 300       # idle seconds before auto-AFK
+manual_command = true       # enable the /afk command
+playerlist_indicator = true # show [AFK] on the 2.11 player list (needs player_list)
+gas_indicator = true        # show [AFK] in /ga and /gas
+announce = false            # broadcast "X is now AFK / back" to the area
+label = "[AFK]"             # the tag text
+
+# Read by the OPTIONAL lockdown plugin (drop lockdown.dll / .so into plugins/).
+# A mod "known players only" switch — see the lockdown entry in OPTIONAL Plugins/README.md.
+[lockdown]
+permission = 4              # permission bits required to use /lockdown (4 = ban; matches roles.toml)
+default_duration = "0"      # /lockdown on with no time: 0 = until /lockdown off (e.g. "30m", "2h")
+announce = true             # post a MODS-ONLY OOC notice when lockdown toggles
+persist = true              # remember known IPIDs across restarts (config/lockdown_known.txt)
+# message = "..."           # the notice shown to a blocked new IPID (has a sane default)

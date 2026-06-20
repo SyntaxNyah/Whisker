@@ -1007,6 +1007,20 @@ fn String _api_client_get_ip(void* c) {
     return ((client::Client*)c).ip_address;
 }
 
+// Per-client status tag (v5). The plugin owns the string's lifetime; the core
+// only stores the slice and renders it in /ga and /gas. Plugins pass a tag
+// backed by their own static buffer (it must outlive the assignment), and ""
+// to clear it.
+fn void _api_client_set_status_tag(void* c, String tag) {
+    if (c == null) return;
+    ((client::Client*)c).status_tag = tag;
+}
+
+fn String _api_client_get_status_tag(void* c) {
+    if (c == null) return "";
+    return ((client::Client*)c).status_tag;
+}
+
 fn String _api_packet_get_field(void* pkt, int index) {
     if (pkt == null) return "";
     protocol::Packet* p = (protocol::Packet*)pkt;
@@ -1023,6 +1037,14 @@ fn void _api_client_kick(void* c) {
     if (c == null) return;
     client::Client* target = (client::Client*)c;
     target.send_raw(protocol::build("KK", { "Kicked by plugin." }));
+    target.connected = false;
+}
+
+// Like client_kick, but with a custom KK reason the client displays (v6).
+fn void _api_client_kick_msg(void* c, String message) {
+    if (c == null) return;
+    client::Client* target = (client::Client*)c;
+    target.send_raw(protocol::build("KK", { message }));
     target.connected = false;
 }
 
@@ -1161,6 +1183,13 @@ fn plugin::PluginAPI build_plugin_api(Server* srv) {
         .client_get_ip           = &_api_client_get_ip,
         .register_conn_filter    = &_api_register_conn_filter,
         .broadcast_perm_raw      = &_api_broadcast_perm_raw,
+
+        // Per-client status tag (v5)
+        .client_set_status_tag   = &_api_client_set_status_tag,
+        .client_get_status_tag   = &_api_client_get_status_tag,
+
+        // Custom-reason kick (v6)
+        .client_kick_msg         = &_api_client_kick_msg,
     };
 }
 
