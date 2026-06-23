@@ -1343,6 +1343,39 @@ webAO-heavy rooms) need, with very server-specific thresholds.
 
 ---
 
+### Captcha
+
+**Compiled:** `Windows/captcha.dll` · `Linux/captcha.so`
+**Source:** `captcha.c3`
+
+Makes a newly-connected player answer a one-line challenge in OOC before they can
+chat — a simple anti-bot / anti-driveby-spam gate. Once an IPID answers correctly
+it's remembered for the rest of the server's run, so regulars are challenged at
+most once.
+
+**Configuration — `config/config.toml` `[captcha]`:**
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `enabled` | `true` | Master switch. |
+| `mode` | `math` | `math` (random `a + b = ?`) or `word` (fixed answer). |
+| `word` | `GREEN` | The answer in `word` mode. |
+| `prompt` | sane default | OOC prompt shown in `word` mode. |
+
+**Setup:** drop into `plugins/`, optional `[captcha]` config, restart. **To
+remove:** delete the file and restart.
+
+**Why is this a plugin and not built-in?** A captcha adds friction for every new
+player, which most healthy servers don't want — it's a tool for when you're
+actively under bot/spam pressure. Opt-in keeps the front door frictionless by
+default.
+
+> **Note:** after a `/reload` the pending-challenge state resets, so already-
+> connected players are treated as verified (fail-open); new joiners are still
+> challenged. The verified-IPID memory is per server run (not persisted).
+
+---
+
 > **Note on `/reload`:** the plugins above that spawn a background thread
 > (`tor_blocker`, `discord_modcall`) share the same small `/reload` caveat as the
 > existing `server_advertiser` / `ip_guard` plugins — a hot-reload can briefly
