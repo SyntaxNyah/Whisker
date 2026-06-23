@@ -1,0 +1,13 @@
+{
+    "version": "1.0.0",
+    "authors": ["Whisker Community"],
+    "langrev": "1",
+    "warnings": ["no-unused"],
+    "targets": {
+        "client_gate": {
+            "type": "dynamic-lib",
+            "sources-override": ["../client_gate.c3"],
+            "linked-libraries": ["c"]
+        }
+    }
+}

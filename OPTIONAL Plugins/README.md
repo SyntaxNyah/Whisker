@@ -1105,6 +1105,39 @@ has connection *rate* limiting; this adds a *concurrency* cap on top.
 
 ---
 
+### Client Gate
+
+**Compiled:** `Windows/client_gate.dll` · `Linux/client_gate.so`
+**Source:** `client_gate.c3`
+
+Allow- or block-lists connecting clients by the software name they report in the
+AO2 `ID` handshake packet (e.g. `AO2-Client`, `webAO`, a custom/script client). A
+rejected client is kicked with a reason and the handshake is halted.
+
+**Configuration — `config/client_gate.txt`** (auto-created with a template):
+
+| Directive | Meaning |
+|-----------|---------|
+| `mode blocklist` / `mode allowlist` | block the listed clients, or admit **only** the listed clients |
+| `client <pattern>` | case-insensitive substring matched against the client name (repeatable) |
+| `message <text>` | kick reason shown to a rejected client |
+| `enabled true/false` | master switch |
+
+**Setup:** drop into `plugins/`, restart (writes the template), edit the file,
+restart. **To remove:** delete the file and restart.
+
+**Why is this a plugin and not built-in?** Gating clients is community-specific
+and double-edged: blocking script/abusive clients stops griefing, but an
+*allowlist* also turns away players on perfectly good third-party clients you
+didn't list. Some servers want only the official client; others welcome every
+fork. So it's opt-in.
+
+> **Note:** the client name is self-reported, so this stops casual mismatches and
+> known-bad clients, not a determined attacker who spoofs the field. Pair it with
+> `ip_guard` / `tor_blocker` / `conn_cap` for connection-level control.
+
+---
+
 > **Note on `/reload`:** the plugins above that spawn a background thread
 > (`tor_blocker`, `discord_modcall`) share the same small `/reload` caveat as the
 > existing `server_advertiser` / `ip_guard` plugins — a hot-reload can briefly
