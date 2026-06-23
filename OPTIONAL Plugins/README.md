@@ -1072,6 +1072,39 @@ modcall — so the policy is opt-in.
 
 ---
 
+### Connection Cap
+
+**Compiled:** `Windows/conn_cap.dll` · `Linux/conn_cap.so`
+**Source:** `conn_cap.c3`
+
+Limits how many concurrent client **sessions** a single IP may hold. A new
+connection from an address already at the cap is rejected at accept time (the
+`ip_guard` pattern) — before it costs a thread.
+
+**Configuration — `config/config.toml` `[conn_cap]`:**
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `enabled` | `true` | Master switch. |
+| `max_per_ip` | `3` | Max concurrent sessions per IP. |
+
+**Command:** `/capstatus` (BAN perm) — shows the cap, active IPs, and total rejected.
+
+**Setup:** drop into `plugins/`, restart. **To remove:** delete the file and restart.
+
+**Why is this a plugin and not built-in?** Many servers legitimately have several
+people behind one IP (households, schools, shared networks), and a cap turns the
+extras away — so the right number, if any, is server-specific. The core already
+has connection *rate* limiting; this adds a *concurrency* cap on top.
+
+> **Behind a reverse proxy:** the cap keys on the **real client IP**, so make sure
+> your proxy forwards `X-Forwarded-For` / `CF-Connecting-IP` (Whisker resolves
+> these). Otherwise every client appears to share the proxy's IP and the cap
+> locks them all out. It counts concurrent *joined* sessions, so a connection that
+> never finishes the handshake isn't counted.
+
+---
+
 > **Note on `/reload`:** the plugins above that spawn a background thread
 > (`tor_blocker`, `discord_modcall`) share the same small `/reload` caveat as the
 > existing `server_advertiser` / `ip_guard` plugins — a hot-reload can briefly
