@@ -1199,6 +1199,46 @@ names (the Scunthorpe problem) — so each server curates its own list, opt-in.
 
 ---
 
+### Word Filter
+
+**Compiled:** `Windows/word_filter.dll` · `Linux/word_filter.so`
+**Source:** `word_filter.c3`
+
+Filters a configurable word blacklist out of IC/OOC chat, with optional
+escalation to auto-mute repeat offenders. Two modes:
+
+- **`block`** (default, clean) — the offending message never goes out; the sender
+  gets a notice.
+- **`censor`** — matched words become `****` and the line is re-broadcast.
+
+**Configuration — `config/word_filter.txt`** (auto-created):
+
+| Directive | Default | Meaning |
+|-----------|---------|---------|
+| `bad <word>` | — | Word/substring to filter, case-insensitive (repeatable). |
+| `mode block` / `mode censor` | `block` | Block the message, or asterisk the words. |
+| `filter_ic` / `filter_ooc` | `true` | Which chat to filter (commands never touched). |
+| `exempt_mods` | `true` | Skip authenticated mods. |
+| `escalate` | `false` | Auto-mute repeat offenders. |
+| `threshold` / `window_seconds` | `3` / `30` | Violations within the window before a mute. |
+| `message <text>` | sane default | Notice shown on a blocked message. |
+| `enabled` | `true` | Master switch. |
+
+**Setup:** drop into `plugins/`, restart, edit the file, restart. **To remove:**
+delete the file and restart.
+
+**Why is this a plugin and not built-in?** Acceptable language varies wildly by
+community (a mature RP server and a kid-friendly one want opposite defaults), and
+filters always false-positive — so each server brings its own list, opt-in.
+
+> **`censor` caveat:** censoring *rebuilds* the message (a plugin can't edit a
+> packet in place), so a censored line loses the core's pairing for that line and
+> is invisible to logging/relay plugins. `block` has neither issue — prefer it
+> unless you specifically need the censored line to still appear. See the
+> dev-guide note on packet rewriting.
+
+---
+
 > **Note on `/reload`:** the plugins above that spawn a background thread
 > (`tor_blocker`, `discord_modcall`) share the same small `/reload` caveat as the
 > existing `server_advertiser` / `ip_guard` plugins — a hot-reload can briefly
