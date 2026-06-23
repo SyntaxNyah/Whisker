@@ -1438,6 +1438,39 @@ the general-purpose version, opt-in.
 
 ---
 
+### Status Feed
+
+**Compiled:** `Windows/status_feed.dll` · `Linux/status_feed.so`
+**Source:** `status_feed.c3`
+
+Periodically writes a `status.json` (player count, per-area players/status/CM
+count) for a website to read, and can optionally POST it to a webhook — as a
+short Discord message if the URL is a Discord webhook, or as the raw JSON to any
+other endpoint.
+
+**Configuration — `config/config.toml` `[status_feed]`:**
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `enabled` | `true` | Master switch. |
+| `file` | `status.json` | Where the JSON is written. |
+| `interval_seconds` | `30` | How often to refresh. |
+| `webhook_url` | *(unset)* | Optional https endpoint to POST to. Discord webhook → a short message; anything else → the raw JSON. |
+
+**Setup:** drop into `plugins/`, optional `[status_feed]` config, restart, point
+your website at `status.json`. **To remove:** delete the file and restart.
+
+**Why is this a plugin and not built-in?** Only public-facing servers want a
+status feed, and where/how it's published (a file, a custom API, Discord) is
+entirely operator-specific. Opt-in keeps the core from caring.
+
+> **Discord note:** a webhook POST creates a *new* message each interval, which is
+> spammy for a status feed — set a long `interval_seconds`, or prefer a website
+> reading `status.json`. The URL is validated (https, no shell-special bytes)
+> before it reaches the shell.
+
+---
+
 > **Note on `/reload`:** the plugins above that spawn a background thread
 > (`tor_blocker`, `discord_modcall`) share the same small `/reload` caveat as the
 > existing `server_advertiser` / `ip_guard` plugins — a hot-reload can briefly
