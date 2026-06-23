@@ -1168,6 +1168,37 @@ plagued by advert spam. Opt-in lets each decide.
 
 ---
 
+### Name Filter
+
+**Compiled:** `Windows/name_filter.dll` · `Linux/name_filter.so`
+**Source:** `name_filter.c3`
+
+Rejects players whose **showname**, **character**, or **OOC name** matches a
+blacklist of patterns from a text file. Two actions: `drop` (their messages
+silently don't go out until they rename) or `kick` (disconnect with a reason).
+
+> **No ban:** the Plugin API has no ban primitive, so the strongest action here is
+> a kick. Pair it with the core `/ban` for an actual ban.
+
+**Configuration — `config/name_filter.txt`** (auto-created):
+
+| Directive | Default | Meaning |
+|-----------|---------|---------|
+| `bad <pattern>` | — | Blocked substring, case-insensitive (repeatable). |
+| `action drop` / `action kick` | `kick` | Drop their messages, or disconnect them. |
+| `check_showname` / `check_charname` / `check_oocname` | `true` | Which names to inspect. |
+| `message <text>` | sane default | Shown on kick / on a dropped message. |
+| `enabled` | `true` | Master switch. |
+
+**Setup:** drop into `plugins/`, restart, edit the file, restart. **To remove:**
+delete the file and restart.
+
+**Why is this a plugin and not built-in?** What counts as an unacceptable name is
+community-specific, and a heavy-handed blacklist false-positives on innocent
+names (the Scunthorpe problem) — so each server curates its own list, opt-in.
+
+---
+
 > **Note on `/reload`:** the plugins above that spawn a background thread
 > (`tor_blocker`, `discord_modcall`) share the same small `/reload` caveat as the
 > existing `server_advertiser` / `ip_guard` plugins — a hot-reload can briefly
