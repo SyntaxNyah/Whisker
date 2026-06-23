@@ -1138,6 +1138,36 @@ fork. So it's opt-in.
 
 ---
 
+### Link Filter
+
+**Compiled:** `Windows/link_filter.dll` · `Linux/link_filter.so`
+**Source:** `link_filter.c3`
+
+Blocks IC/OOC messages that contain links (`http`, `https`, `www.`,
+`discord.gg`), with an allowlist of domains you do permit. Anti-advertising /
+anti-grief. It **blocks** the message (consume + a "no links" notice to the
+sender) rather than rewriting it, so logging/relay plugins stay coherent.
+
+**Configuration — `config/link_filter.txt`** (auto-created with a template):
+
+| Directive | Default | Meaning |
+|-----------|---------|---------|
+| `allow <domain>` | — | Permit this domain (repeatable). |
+| `block_ic` | `true` | Filter IC messages. |
+| `block_ooc` | `true` | Filter OOC messages (commands are never touched). |
+| `exempt_mods` | `true` | Let authenticated mods post links. |
+| `message <text>` | sane default | Notice shown to the sender. |
+| `enabled` | `true` | Master switch. |
+
+**Setup:** drop into `plugins/`, restart, edit the file, restart. **To remove:**
+delete the file and restart.
+
+**Why is this a plugin and not built-in?** Plenty of servers *want* links (music,
+references, evidence images), so a blanket filter is wrong for them; others are
+plagued by advert spam. Opt-in lets each decide.
+
+---
+
 > **Note on `/reload`:** the plugins above that spawn a background thread
 > (`tor_blocker`, `discord_modcall`) share the same small `/reload` caveat as the
 > existing `server_advertiser` / `ip_guard` plugins — a hot-reload can briefly
