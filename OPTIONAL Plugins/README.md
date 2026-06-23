@@ -771,4 +771,281 @@ lockdown's. Nothing runs on the per-packet path.
 
 ---
 
+### Roll (tabletop dice)
+
+**Compiled:** `Windows/roll.dll` · `Linux/roll.so`
+**Source:** `roll.c3`
+
+Adds dice-rolling commands for DnD / tabletop play on top of the courtroom. A
+roll is broadcast to the whole area so the table can see and trust it.
+
+**Commands:**
+
+| Command | Usage | Description |
+|---------|-------|-------------|
+| `/roll` | `/roll [NdS[+/-M]]` | Roll dice (default `1d20`), shown to the area. e.g. `/roll 2d6+3`, `/roll d20`, `/roll 4d10-2`. |
+| `/rollp` | `/rollp <dice>` | Same, but the result is sent only to you (a private / GM roll). |
+
+Output looks like `Phoenix rolls 2d6+3: [4, 5] + 3 = 12`. Rolls are capped at
+**100 dice** and **1000 sides** so a single command can't flood the area (the
+first 30 individual dice are listed, then summarised).
+
+**Setup:** drop `roll.dll` / `roll.so` into `plugins/` and restart. No config.
+
+**To remove it:** delete the file and restart.
+
+**Why is this a plugin and not built-in?**
+
+Dice aren't part of the AO2 protocol — they're a gameplay feature. Pure
+courtroom and social servers don't want dice (and an uncapped roller is a spam
+vector), so it's opt-in. Tabletop/DnD servers drop it in; everyone else never
+sees it.
+
+**Limits:**
+
+| Limit | Value |
+|-------|-------|
+| Max dice per roll | 100 |
+| Max sides per die | 1000 |
+| Dice individually listed | 30 (then summarised) |
+
+---
+
+### Global Chat + Private Messages
+
+**Compiled:** `Windows/global_chat.dll` · `Linux/global_chat.so`
+**Source:** `global_chat.c3`
+
+Cross-area social tooling: a server-wide global OOC channel, one-to-one private
+messages, and a per-player mute for the global channel.
+
+**Commands:**
+
+| Command | Usage | Description |
+|---------|-------|-------------|
+| `/g` | `/g <message>` | Send an OOC message to **every** area. Shows as `[Global] <name>: <message>`. |
+| `/pm` | `/pm <uid> <message>` | Privately message one player by UID. Only the two of you see it. |
+| `/toggleglobal` | `/toggleglobal` | Hide/show the global channel for yourself (you can still send while hidden). |
+
+**Setup:** drop the file into `plugins/` and restart. No config.
+
+**To remove it:** delete the file and restart.
+
+**Why is this a plugin and not built-in?**
+
+Cross-area chatter changes a server's culture. Some communities deliberately
+keep areas siloed for roleplay immersion or casing focus, and private messages
+raise their own moderation questions (harassment via DM). Opt-in lets each
+server choose.
+
+**Design notes (for developers):**
+
+- To honour `/toggleglobal`, `/g` must deliver to each recipient individually
+  (so it can skip muters) — `broadcast_all_msg` can't filter per-player. Since
+  the Plugin API has no "enumerate all clients" call, the plugin keeps its own
+  roster of online **UIDs** from the lifecycle JOIN/LEAVE hooks and resolves
+  uid → client with `find_client` at send time. It stores UIDs, never client
+  pointers (a stored pointer to a disconnected client is a use-after-free).
+- **Reload limitation:** a `/reload` empties the roster (and everyone's mute
+  state). To shrink that window, any `MS`/`CT`/`CH` packet re-adds its sender, so
+  activity (or a keepalive) re-tracks players within seconds — but a silent
+  lurker could miss global messages until they next speak. Same limitation
+  `player_list` / `afk` have.
+
+**Limits:**
+
+| Limit | Value |
+|-------|-------|
+| Tracked players | 1024 (matches the server's client cap) |
+
+---
+
+### Chat Logger
+
+**Compiled:** `Windows/chat_logger.dll` · `Linux/chat_logger.so`
+**Source:** `chat_logger.c3`
+
+Appends every IC and OOC message to per-area log files for moderation / audit,
+one file per area (`logs/area<idx>_<name>.log`):
+
+```
+[2026-06-23 14:05:01 UTC] [Courtroom 1] IC uid=5 ipid=ab12cd34 char=Phoenix show=Nick: Objection!
+[2026-06-23 14:05:10 UTC] [Courtroom 1] OOC uid=5 ipid=ab12cd34 name=PhoenixFan: brb one sec
+```
+
+Files are append-only and flushed per line, so a crash never loses prior lines.
+**OOC lines that start with `/` (commands) are never logged** — deliberately, so
+a mistyped `/login <password>` can't leak into the logs.
+
+**Configuration — `config/config.toml` `[chat_logger]`:**
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `enabled` | `true` | Master switch. |
+| `log_ic` | `true` | Log IC (in-character) messages. |
+| `log_ooc` | `true` | Log OOC messages (never commands). |
+| `include_ipid` | `true` | Include the hashed IPID per line (set `false` for stricter privacy). |
+| `directory` | `logs` | Where the per-area files go (created if missing). |
+
+**Setup:** drop the file into `plugins/`, optionally add a `[chat_logger]`
+section to `config.toml`, restart.
+
+**To remove it:** delete the file and restart.
+
+**Why is this a plugin and not built-in?**
+
+Persistent chat logging — especially tied to an IPID — is a policy choice, not a
+default. Many AO/RP communities consider it invasive, some have privacy
+obligations, others just don't want the disk usage. It ships opt-in so the
+operator decides consciously. **Tell your players if you enable it.**
+
+**Limits:**
+
+| Limit | Value |
+|-------|-------|
+| Per-line length | ~760 bytes (longer messages truncated) |
+
+---
+
+### TOR Blocker
+
+**Compiled:** `Windows/tor_blocker.dll` · `Linux/tor_blocker.so`
+**Source:** `tor_blocker.c3`
+
+Blocks **Tor exit nodes** (and any other downloaded IP blocklist — e.g. a VPN /
+proxy feed) at connect time, before a connection costs the server a thread. It is
+the same shape as `ip_guard` (a v4 connection filter on the accept path); the
+difference is that the list is **downloaded** rather than hand-curated. By
+default it uses the official Tor bulk exit list
+(`https://check.torproject.org/torbulkexitlist`); add more feeds with extra
+`list <url>` lines. The plugin downloads and refreshes the list(s) itself with
+`curl` on a background thread — no API key, nothing to install.
+
+**Commands** (require the **BAN** permission):
+
+| Command | Usage | Description |
+|---------|-------|-------------|
+| `/torstatus` | `/torstatus` | Show list/blocklist/manual/allow counts, last refresh, total blocked. |
+| `/torreload` | `/torreload` | Re-read config + re-download the blocklist(s) in the background. |
+| `/torblocklog` | `/torblocklog` | Show recent blocked connection attempts. |
+| `/torblock` | `/torblock <ip\|cidr>` | Manually block an address/range live (saved to the config). |
+| `/torunblock` | `/torunblock <ip\|cidr>` | Remove a manual block. |
+
+**Configuration — `config/tor_blocker.txt`** (auto-created with a commented
+template on first run): `list <url>`, `allow <ip|cidr>`, `block <ip|cidr>`, plus
+options `alert_blocked`, `alert_permission`, `alert_interval_sec`,
+`block_unknown`, `auto_update`, `update_interval_hours` (default 6 — Tor's exit
+set churns).
+
+**Setup:** drop the file into `plugins/`, restart, edit `config/tor_blocker.txt`
+if you want extra feeds, `/torreload`.
+
+**To remove it:** delete the file and restart.
+
+**Why is this a plugin and not built-in (and a warning)?**
+
+Blocking Tor is a **blunt instrument** and a policy call. Plenty of legitimate
+users reach AO through Tor for privacy or to evade censorship, and blocking it
+turns them all away to stop the few who abuse it. That's right for some servers
+and wrong for others, so it's opt-in — never core. Prefer the `allow` list for
+known-good addresses. It complements the core `/ban` (hashed IPID) and `ip_guard`
+(IP/CIDR/ASN/country) without interfering.
+
+**Limits:**
+
+| Limit | Value |
+|-------|-------|
+| Downloaded blocklist ranges | 300,000 |
+| Manual `block` rules | 4,096 |
+| `allow` rules | 4,096 |
+| Distinct list URLs | 8 |
+| Recent-blocks log | 64 (ring buffer) |
+
+---
+
+### Discord Modcall Webhook
+
+**Compiled:** `Windows/discord_modcall.dll` · `Linux/discord_modcall.so`
+**Source:** `discord_modcall.c3`
+
+Forwards every in-game **modcall** (the `ZZ` packet — what a player sends when
+they click "Call Mod") to a Discord channel via an incoming webhook, as a rich
+embed. AO moderators are very often not watching the server console; a Discord
+ping reaches them on their phone. The in-game modcall is **unaffected** — online
+mods are still notified the normal way; this only *adds* the Discord notice.
+
+**What the embed contains:** area name, UID, character, showname, OOC name, IPID
+(toggleable), the modcall reason, and — optionally — the last *N* messages in
+that area so the mod has context. The embed colour is configurable.
+
+**Configuration — `config/discord.txt`** (auto-created with a commented template
+on first run; the plugin is **inactive until `webhook_url` is set**):
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `webhook_url` | *(unset)* | Your Discord channel's webhook URL. Required to activate. |
+| `username` | `Whisker Modcall` | Name the webhook posts under. |
+| `color` | `#E74C3C` | Embed colour (`#hex` or decimal). |
+| `include_logs` | `true` | Include recent area messages in the embed. |
+| `log_count` | `10` | How many recent messages (max 25). |
+| `include_ipid` | `true` | Include the caller's IPID. |
+| `mention` | *(unset)* | Optional content ping, e.g. `<@&ROLEID>`, to alert a role. |
+
+**Setup:** drop the file into `plugins/`, restart once (it writes the template),
+paste your webhook URL into `config/discord.txt`, restart again. In Discord:
+*Channel → Edit → Integrations → Webhooks → New Webhook → Copy URL*.
+
+**To remove it:** delete the file and restart.
+
+**Why is this a plugin — and why you might NOT want to rely on Discord:**
+
+Routing modcalls to Discord is genuinely useful, but it's the wrong default for
+many servers, which is exactly why it's opt-in:
+
+- **It's a third-party dependency.** If Discord is down, rate-limits you, or the
+  webhook is deleted, the Discord notices silently stop. The **in-game** modcall
+  always still works (this never replaces it) — but anyone who *relies* on the
+  Discord side has a single point of failure outside their control. Treat Discord
+  as a convenience, not your only alerting.
+- **It sends player data off your server.** Area names, charnames, shownames, OOC
+  names, message context, and (unless disabled) the IPID leave your machine for
+  Discord's infrastructure, under Discord's terms — not yours. Some communities
+  have privacy expectations that make that a problem. Consider
+  `include_ipid = false` / `include_logs = false`, and tell your players.
+- **The webhook is a small secret.** Anyone with the URL can post to your
+  channel, so it lives in server-side config, never in the client.
+- **Not every server even has a staff Discord.**
+
+**Design notes (for developers):**
+
+- The `ZZ` hook builds the Discord embed JSON **allocation-free** (it runs on a
+  per-client thread with no plugin temp allocator) and hands it to a background
+  worker thread, which writes it to a temp file and POSTs it with
+  `curl --data-binary @file`. The temp-file approach sidesteps shell-escaping of
+  the JSON and the cmd.exe command-line length limit, and the payload file is
+  deleted right after sending (it holds player data).
+- The webhook URL is validated (`https://`, a `discord(app).com` host, no
+  shell-dangerous bytes) before it ever reaches the shell.
+- Recent-message context comes from a per-area ring filled by `MS`/`CT` hooks
+  (OOC commands are excluded). UTF-8 is never split when capping names/messages,
+  so the JSON stays valid.
+
+**Limits:**
+
+| Limit | Value |
+|-------|-------|
+| Tracked areas (for context) | 256 |
+| Recent messages kept per area | 25 |
+| Recent messages sent in an embed | up to `log_count` (max 25) |
+| Queued webhook posts | 8 |
+
+---
+
+> **Note on `/reload`:** the plugins above that spawn a background thread
+> (`tor_blocker`, `discord_modcall`) share the same small `/reload` caveat as the
+> existing `server_advertiser` / `ip_guard` plugins — a hot-reload can briefly
+> race the background thread as the library is unloaded. A full server restart is
+> the clean way to update these; `/reload` is fine for the command/hook-only
+> plugins (`roll`, `global_chat`, `chat_logger`).
+
 See the [Plugin Dev Guide](../plugins/PLUGIN%20DEV%20GUIDE%20README.md) for writing your own plugins.

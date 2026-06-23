@@ -48,7 +48,13 @@
       "Bash(C:\\\\c3c\\\\c3\\\\c3c.exe build *)",
       "PowerShell(Get-Process *)",
       "Bash(git checkout *)",
-      "Bash(git add *)"
+      "Bash(git add *)",
+      "Bash(\"C:\\\\c3c\\\\c3\\\\c3c.exe\" --version)",
+      "Bash(\"C:\\\\c3c\\\\c3\\\\c3c.exe\" dynamic-lib *)",
+      "Bash(echo \"=== exit: $? ===\")",
+      "Bash(echo \"=== discord exit: $? ===\")",
+      "Bash(\"C:\\\\c3c\\\\c3\\\\c3c.exe\" build *)",
+      "Bash(echo \"=== server build exit: $? ===\")"
     ]
   }
 }

@@ -1632,6 +1632,50 @@ api.client_send_msg(t, "hi");        // safe — t is a real, online client
 > would crash there. Null-checking in your plugin keeps it correct (and
 > crash-free) across server versions.
 
+## Gotchas (lessons from building the optional plugins)
+
+These bit during real plugin development and don't all surface the way you'd
+expect — some are compile errors, one is a silent build/link quirk, and a couple
+are API behaviours worth knowing *before* you design around them.
+
+- **`c3c build` fails to link a plugin on Windows.** The example `project.json`
+  files set `"linked-libraries": ["c"]`, which is correct on Linux but makes the
+  Windows link fail (`could not open 'c.lib'` — MSVC has no `c.lib`; it links its
+  CRT implicitly). The C3 front-end still compiles your source fine, so it's a
+  link-only quirk, not a source error. To build/verify on Windows, use a plain
+  dynamic-lib with **no** `-l c`:
+  ```bash
+  cd my_plugin/
+  c3c dynamic-lib ../my_plugin.c3 -o out/my_plugin   # produces out/my_plugin.dll
+  ```
+  (CI cross-compiles the shipped `.dll` the same way — see the Windows path in
+  `build_plugins.sh`.) On Linux, keep `-l c` / `"linked-libraries": ["c"]`.
+
+- **C3 requires braces on `if`/`else`, even around a single statement.**
+  `if (x) foo(); else bar();` is a *compile error* ("if-statements with an 'else'
+  must use '{ }'"). Write `if (x) { foo(); } else { bar(); }`.
+
+- **You can't name a variable after a type.** C3 has an `any` type, so
+  `bool any = false;` fails to compile ("A type cannot be used as a variable
+  name"). Rename it (`have`, `found`, …). The same applies to other type names.
+
+- **`packet_get_field` returns already-DECODED text, and is bounds-checked.** The
+  server unescapes each field (`<num>`→`#`, `<and>`→`&`, `<percent>`→`%`,
+  `<dollar>`→`$`) when it parses the packet, so a hook reading e.g. the `MS`
+  message field gets the human-readable string — do **not** unescape it again. An
+  out-of-range index returns `""` instead of crashing, so a short/malformed
+  packet won't take the server down (still check `packet_get_field_count` if a
+  missing field means something to your logic).
+
+- **Shelling out `curl` with a JSON body? Use a temp file, not the command
+  line.** Inlining JSON in a `system()` call (`curl -d '{...}' URL`) is a
+  cross-platform trap: single quotes aren't special on Windows `cmd.exe` (so the
+  quotes end up *in* the body), an apostrophe in the data breaks POSIX
+  single-quoting, and a long body hits `cmd.exe`'s ~8191-char command-line limit.
+  Instead write the JSON to a file and post it with `curl --data-binary @file` —
+  only the file path and the (validated, quoted) URL touch the shell. See
+  `discord_modcall.c3` for the full pattern.
+
 ## Timers Without Threads (the packet-hook pattern)
 
 Plugins often want time-based behavior: expire a pending challenge, end a round

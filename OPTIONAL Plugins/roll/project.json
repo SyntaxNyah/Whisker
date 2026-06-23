@@ -1,0 +1,13 @@
+{
+    "version": "1.0.0",
+    "authors": ["Whisker Community"],
+    "langrev": "1",
+    "warnings": ["no-unused"],
+    "targets": {
+        "roll": {
+            "type": "dynamic-lib",
+            "sources-override": ["../roll.c3"],
+            "linked-libraries": ["c"]
+        }
+    }
+}
