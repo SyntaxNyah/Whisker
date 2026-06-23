@@ -1471,6 +1471,53 @@ entirely operator-specific. Opt-in keeps the core from caring.
 
 ---
 
+### Discord Relay
+
+**Compiled:** `Windows/discord_relay.dll` · `Linux/discord_relay.so`
+**Source:** `discord_relay.c3`
+
+A two-way bridge between AO2 areas and a Discord channel.
+
+- **Outbound** (solid): mirror IC and/or OOC of chosen areas — or the whole
+  server — to a Discord channel via a webhook. Each message posts under the
+  player's name, tagged `[Area/IC]` or `[Area/OOC]`.
+- **Inbound** (experimental): a Discord bot reads a channel and relays messages
+  back into a chosen area as OOC, so people can talk from Discord.
+
+**Configuration — `config/discord_relay.txt`** (auto-created):
+
+| Directive | Meaning |
+|-----------|---------|
+| `webhook_url <url>` | Discord webhook for outbound (server → Discord). |
+| `relay_ic` / `relay_ooc` | Which message types to mirror (default both). |
+| `relay_all true` | Relay every area... |
+| `relay_area <index>` | ...or list specific area indices (repeatable). |
+| `inbound_enabled true` | Turn on the experimental inbound relay. |
+| `bot_token <token>` | Discord bot token (needs the **Message Content Intent**). |
+| `channel_id <id>` | The Discord channel to read. |
+| `inbound_area <index>` | Area that inbound Discord messages appear in (as OOC). |
+
+**Setup:** drop into `plugins/`, restart (writes the template), fill in the
+config, restart. For inbound, create a Discord bot, enable its *Message Content
+Intent*, invite it, and give it read access to the channel.
+
+**To remove:** delete the file and restart.
+
+**Why is this a plugin — and the same Discord caveats apply:** mirroring chat
+sends player messages off your server to Discord (privacy), and the bridge is a
+third-party dependency. Inbound is **experimental** — it polls Discord's REST API
+every few seconds and parses messages with a lightweight scanner; it skips
+webhook/own messages to avoid loops, but treat it as best-effort. See the
+`discord_modcall` section for the fuller "why you might not want to depend on
+Discord" discussion.
+
+> **Loop & rate notes:** outbound is queued and posted off the chat thread (never
+> blocks players); the webhook URL and bot token are validated against
+> shell-special characters before reaching `curl`. Outbound messages carry a
+> `webhook_id`, which inbound skips, so the two directions don't echo each other.
+
+---
+
 > **Note on `/reload`:** the plugins above that spawn a background thread
 > (`tor_blocker`, `discord_modcall`) share the same small `/reload` caveat as the
 > existing `server_advertiser` / `ip_guard` plugins — a hot-reload can briefly
