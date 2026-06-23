@@ -1239,6 +1239,38 @@ filters always false-positive — so each server brings its own list, opt-in.
 
 ---
 
+### Unicode Guard
+
+**Compiled:** `Windows/unicode_guard.dll` · `Linux/unicode_guard.so`
+**Source:** `unicode_guard.c3`
+
+Defends against **zalgo** — messages or shownames stacked with dozens of
+combining diacritics that smear across the screen. Two actions: `block` (the
+message is held; clean default) or `strip` (the combining marks are removed and
+the message re-broadcast). It targets the common combining block U+0300–U+036F,
+so normal accented text (which uses precomposed characters) is unaffected.
+
+**Configuration — `config/unicode_guard.txt`** (auto-created):
+
+| Directive | Default | Meaning |
+|-----------|---------|---------|
+| `action block` / `action strip` | `block` | Hold the message, or strip the marks. |
+| `max_combining` | `4` | Combining marks tolerated before flagging. |
+| `filter_ic` / `filter_ooc` | `true` | Which chat to inspect. |
+| `exempt_mods` | `true` | Skip authenticated mods. |
+| `message <text>` | sane default | Notice shown on a held message. |
+| `enabled` | `true` | Master switch. |
+
+**Setup:** drop into `plugins/`, restart, edit the file, restart. **To remove:**
+delete the file and restart.
+
+**Why is this a plugin and not built-in?** Most servers never see zalgo, and the
+detection is necessarily heuristic (a high `max_combining` is needed for scripts
+that legitimately stack marks) — so it's opt-in, with `strip` carrying the same
+packet-rebuild caveat as the word filter's censor mode.
+
+---
+
 > **Note on `/reload`:** the plugins above that spawn a background thread
 > (`tor_blocker`, `discord_modcall`) share the same small `/reload` caveat as the
 > existing `server_advertiser` / `ip_guard` plugins — a hot-reload can briefly
