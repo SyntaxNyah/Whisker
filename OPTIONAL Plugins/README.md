@@ -1518,11 +1518,11 @@ Discord" discussion.
 
 ---
 
-> **Note on `/reload`:** the plugins above that spawn a background thread
-> (`tor_blocker`, `discord_modcall`) share the same small `/reload` caveat as the
-> existing `server_advertiser` / `ip_guard` plugins — a hot-reload can briefly
-> race the background thread as the library is unloaded. A full server restart is
-> the clean way to update these; `/reload` is fine for the command/hook-only
-> plugins (`roll`, `global_chat`, `chat_logger`).
+> **Note on `/reload`:** the plugins that spawn a background thread
+> (`tor_blocker`, `discord_modcall`, `discord_relay`, `status_feed`, and
+> `slowmode` in queue mode) share the same small `/reload` caveat as the existing
+> `server_advertiser` / `ip_guard` plugins — a hot-reload can briefly race the
+> background thread as the library is unloaded. A full server restart is the clean
+> way to update those; `/reload` is fine for the command/hook-only plugins.
 
 See the [Plugin Dev Guide](../plugins/PLUGIN%20DEV%20GUIDE%20README.md) for writing your own plugins.

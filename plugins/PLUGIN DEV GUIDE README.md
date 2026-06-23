@@ -1676,6 +1676,35 @@ are API behaviours worth knowing *before* you design around them.
   only the file path and the (validated, quoted) URL touch the shell. See
   `discord_modcall.c3` for the full pattern.
 
+- **A packet hook can't *edit* a packet — only pass it (`false`) or consume it
+  (`true`).** There is no `packet_set_field`. To change what a player said you must
+  consume the original and broadcast a freshly built one (see the `MS`/`CT`
+  rebuild in `word_filter.c3` and `casing.c3`). Two consequences: the rebuilt line
+  **loses the core's pairing insertion** for that line, and because you returned
+  `true` it **skips every later hook and the core's own handler** — so
+  logging/relay/testimony plugins never see it. Prefer **blocking** (consume the
+  bad message, return `false` on the clean path) over rewriting wherever you can;
+  reserve rewriting for when altering one player's line is the whole point (e.g.
+  `mod_toys`). The rebuild mirrors casing's reconstruction: client fields 0–17,
+  padded to 18, then four empty pairing fields, then any trailing fields.
+
+- **Hook order is load order, and the first `true` wins.** `MS`/`CT` hooks run in
+  the order plugins loaded (filesystem order), and the first hook to return `true`
+  stops all later hooks *and* the core. So a consuming filter loaded before an
+  observer (chat_logger, discord_relay) silently starves it of the consumed
+  messages. Don't rely on cross-plugin ordering; design each hook to return
+  `false` on the common path.
+
+- **There is no ban in the Plugin API.** You get `client_kick`, `client_kick_msg`,
+  `client_mute` / `client_unmute` — no ban. A moderation plugin can kick
+  (optionally remembering an IPID to kick again on rejoin) but can't issue a real
+  ban; pair with the core `/ban` for that.
+
+- **A few more C3 syntax quirks** (all compile errors, easy to trip on): fixed
+  arrays are `int[N] name`, not `int name[N]`; the signed pointer-size type is
+  `iptr` / `long`, not `isz`; and declare one `const` per statement
+  (`const int A = 0, B = 1;` is a parse error).
+
 ## Timers Without Threads (the packet-hook pattern)
 
 Plugins often want time-based behavior: expire a pending challenge, end a round
