@@ -1408,6 +1408,36 @@ simple.
 
 ---
 
+### Poll
+
+**Compiled:** `Windows/poll.dll` · `Linux/poll.so`
+**Source:** `poll.c3`
+
+Multi-option polls with a live tally, per area or server-wide. The running count
+is broadcast on each vote.
+
+**Commands:**
+
+| Command | Perm | Description |
+|---------|------|-------------|
+| `/poll <q> \| <a> \| <b> [\| ...]` | CM/mod | Start an area poll (2–8 options). |
+| `/poll` | anyone | Show the current area poll. |
+| `/vote <n>` | anyone | Vote (one vote per player). |
+| `/pollend` | CM/mod | Close it and show the result. |
+| `/gpoll …` · `/gvote <n>` · `/gpollend` | mod | The same, server-wide. |
+
+**Setup:** drop into `plugins/`, restart. No config. **To remove:** delete the
+file and restart.
+
+**Why is this a plugin and not built-in?** Polls are a gameplay nicety and they
+broadcast a tally on every vote — handy for some communities, noise for others.
+The casing plugin already covers one-shot verdict voting via notecards; this is
+the general-purpose version, opt-in.
+
+> **Note:** poll state is in-memory, so a `/reload` clears any running polls.
+
+---
+
 > **Note on `/reload`:** the plugins above that spawn a background thread
 > (`tor_blocker`, `discord_modcall`) share the same small `/reload` caveat as the
 > existing `server_advertiser` / `ip_guard` plugins — a hot-reload can briefly
