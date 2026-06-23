@@ -1,0 +1,13 @@
+{
+    "version": "1.0.0",
+    "authors": ["Whisker Community"],
+    "langrev": "1",
+    "warnings": ["no-unused"],
+    "targets": {
+        "mod_toys": {
+            "type": "dynamic-lib",
+            "sources-override": ["../mod_toys.c3"],
+            "linked-libraries": ["c"]
+        }
+    }
+}

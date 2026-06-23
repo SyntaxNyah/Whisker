@@ -1271,6 +1271,38 @@ packet-rebuild caveat as the word filter's censor mode.
 
 ---
 
+### Mod Toys
+
+**Compiled:** `Windows/mod_toys.dll` · `Linux/mod_toys.so`
+**Source:** `mod_toys.c3`
+
+Light, reversible "punishment" toys a moderator can apply to one player, in the
+tsuserver tradition. Rewrites only the *targeted* player's lines.
+
+**Commands** (require MUTE permission):
+
+| Command | Effect |
+|---------|--------|
+| `/gimp <uid>` | Replace their messages with random nonsense. |
+| `/disemvowel <uid>` | Strip the vowels out of their messages. |
+| `/parrot <uid>` | Echo each message back, doubled and annoying. |
+| `/untoy <uid>` | Clear any toy. |
+
+A toy clears automatically when the player disconnects.
+
+**Setup:** drop into `plugins/`, restart. No config. **To remove:** delete the
+file and restart.
+
+**Why is this a plugin and not built-in?** These are deliberately silly, and many
+servers consider public humiliation the wrong moderation style — they'd rather
+warn/mute/kick. Opt-in keeps that choice with the operator.
+
+> **Note:** a toyed line is rebuilt, so it loses pairing for that line and isn't
+> seen by logging/relay plugins — expected, since the whole point is to alter what
+> the punished user says.
+
+---
+
 > **Note on `/reload`:** the plugins above that spawn a background thread
 > (`tor_blocker`, `discord_modcall`) share the same small `/reload` caveat as the
 > existing `server_advertiser` / `ip_guard` plugins — a hot-reload can briefly
