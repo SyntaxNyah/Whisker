@@ -1376,6 +1376,38 @@ default.
 
 ---
 
+### Jukebox
+
+**Compiled:** `Windows/jukebox.dll` · `Linux/jukebox.so`
+**Source:** `jukebox.c3`
+
+The classic AO **blockdj** mod tool plus a song **request queue**.
+
+**Commands:**
+
+| Command | Perm | Description |
+|---------|------|-------------|
+| `/blockdj <uid>` | MUTE | Stop a player changing the area's music. |
+| `/unblockdj <uid>` | MUTE | Restore their music control. |
+| `/request <song>` | anyone | Queue a song. |
+| `/queue` | anyone | Show the area's request queue. |
+| `/skip` | MUTE | Play the next queued song. |
+| `/djclear` | MUTE | Clear the queue. |
+
+The queue is per-area and advanced manually with `/skip` (AO2 doesn't tell the
+server when a track ends, so there's no auto-advance). `blockdj` clears on
+disconnect.
+
+**Setup:** drop into `plugins/`, restart. No config. **To remove:** delete the
+file and restart.
+
+**Why is this a plugin and not built-in?** Music griefing (DJ spam) is a real
+problem on some servers and a non-issue on others, and a request queue is a
+gameplay nicety not every community wants. Opt-in keeps the core music path
+simple.
+
+---
+
 > **Note on `/reload`:** the plugins above that spawn a background thread
 > (`tor_blocker`, `discord_modcall`) share the same small `/reload` caveat as the
 > existing `server_advertiser` / `ip_guard` plugins — a hot-reload can briefly
