@@ -1,0 +1,13 @@
+{
+    "version": "1.0.0",
+    "authors": ["Whisker Community"],
+    "langrev": "1",
+    "warnings": ["no-unused"],
+    "targets": {
+        "slowmode": {
+            "type": "dynamic-lib",
+            "sources-override": ["../slowmode.c3"],
+            "linked-libraries": ["c"]
+        }
+    }
+}

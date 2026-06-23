@@ -1303,6 +1303,46 @@ warn/mute/kick. Opt-in keeps that choice with the operator.
 
 ---
 
+### Slowmode
+
+**Compiled:** `Windows/slowmode.dll` · `Linux/slowmode.so`
+**Source:** `slowmode.c3`
+
+Per-area IC slow mode. When a room's message rate spikes (or a mod turns it on),
+IC messages are spaced out so slow / webAO clients keep up instead of falling
+behind or skipping.
+
+**Command** (MODIFY_AREA perm): `/slowmode [on [seconds] | off | status]` —
+controls the caller's current area.
+
+**Configuration — `config/config.toml` `[slowmode]`:**
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `enabled` | `true` | Master switch. |
+| `auto` | `true` | Auto-enable on a rate spike. |
+| `trigger_count` / `trigger_window` | `10` / `5` | Messages within N seconds that trip auto-slowmode. |
+| `gap_seconds` | `2` | Minimum gap between IC messages while active. |
+| `duration_seconds` | `30` | How long auto-slowmode stays on. |
+| `queue` | `false` | **Experimental.** Hold extra messages and release them spaced, instead of dropping them. |
+
+**Two behaviours when a message is too fast:**
+- **throttle** (default): the extra message is dropped with a "slow down" notice.
+  Allowed messages pass through the core untouched (full pairing, seen by all hooks).
+- **queue** (experimental): while active, *all* messages in the area are held and
+  released one per `gap`. This preserves order, but released lines are rebuilt (no
+  pairing, invisible to logging/relay plugins) and add latency — enable only if
+  dropping is worse for you than delay.
+
+**Setup:** drop into `plugins/`, optional `[slowmode]` config, restart. **To
+remove:** delete the file and restart.
+
+**Why is this a plugin and not built-in?** The core already rate-limits IC per
+*client*; this is a per-*area* pacing policy that only some servers (big, busy,
+webAO-heavy rooms) need, with very server-specific thresholds.
+
+---
+
 > **Note on `/reload`:** the plugins above that spawn a background thread
 > (`tor_blocker`, `discord_modcall`) share the same small `/reload` caveat as the
 > existing `server_advertiser` / `ip_guard` plugins — a hot-reload can briefly
