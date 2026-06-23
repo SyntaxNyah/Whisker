@@ -1041,6 +1041,37 @@ many servers, which is exactly why it's opt-in:
 
 ---
 
+### Modcall Guard
+
+**Compiled:** `Windows/modcall_guard.dll` · `Linux/modcall_guard.so`
+**Source:** `modcall_guard.c3`
+
+Rate-limits modcalls (the `ZZ` packet) per player and drops duplicate spam, so one
+user mashing "Call Mod" can't bury staff in notifications.
+
+**Configuration — `config/config.toml` `[modcall_guard]`:**
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `enabled` | `true` | Master switch. |
+| `cooldown_seconds` | `30` | Minimum gap between one player's modcalls. |
+| `dedupe` | `true` | Also drop an identical reason repeated soon after. |
+| `notify` | `true` | Tell the player their modcall was held (and that staff were already alerted). |
+
+**Setup:** drop into `plugins/`, restart. **To remove:** delete the file and restart.
+
+**Why is this a plugin and not built-in?** Small servers with attentive staff
+don't need it, and a cooldown can briefly delay a *legitimate* follow-up
+modcall — so the policy is opt-in.
+
+> **Heads-up (hook order):** a held modcall is consumed before it reaches staff.
+> Because packet hooks run in load order and a consumed packet skips later hooks,
+> whether it pre-empts `discord_modcall` depends on which loaded first
+> (filesystem order); it always limits the core's in-game modcall but can't
+> *guarantee* beating another `ZZ` hook. See the dev-guide note on hook ordering.
+
+---
+
 > **Note on `/reload`:** the plugins above that spawn a background thread
 > (`tor_blocker`, `discord_modcall`) share the same small `/reload` caveat as the
 > existing `server_advertiser` / `ip_guard` plugins — a hot-reload can briefly
