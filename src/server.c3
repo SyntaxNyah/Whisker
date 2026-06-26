@@ -1048,6 +1048,65 @@ fn void _api_client_kick_msg(void* c, String message) {
     target.connected = false;
 }
 
+// -- Plugin enumeration, outbound filter, HDID, HP setter (v7) --
+
+fn int _api_get_plugin_count() {
+    return _plugin_srv.plugins.plugin_count;
+}
+
+fn String _api_get_plugin_name(int i) {
+    if (i < 0 || i >= _plugin_srv.plugins.plugin_count) return "";
+    return _plugin_srv.plugins.plugins[i].name;
+}
+
+fn String _api_get_plugin_version(int i) {
+    if (i < 0 || i >= _plugin_srv.plugins.plugin_count) return "";
+    return _plugin_srv.plugins.plugins[i].version;
+}
+
+// Register a plugin filter that transforms outbound OOC server messages. The
+// registry lives in the client module; we just forward (the two alias types have
+// the same fn int(void*, String, char*, int) signature).
+fn void _api_register_outbound_filter(plugin::ApiOutboundMsgFilter f) {
+    client::register_outbound_filter((client::OutboundMsgFilterFn)f);
+}
+
+// Raw hardware id (hashed), the counterpart of client_get_ipid for HDID.
+fn String _api_client_get_hdid(void* c) {
+    if (c == null) return "";
+    return ((client::Client*)c).hdid;
+}
+
+// Small allocation-free decimal writer (so _api_area_set_hp builds its packet
+// without string::tformat, and is therefore callable from any thread).
+fn usz _hp_put_int(char[] buf, usz n, int v) {
+    if (v < 0) v = 0;
+    if (v == 0) { if (n < buf.len) { buf[n] = '0'; n++; } return n; }
+    char[12] tmp; int t = 0;
+    while (v > 0) { tmp[t] = (char)('0' + (v % 10)); t++; v /= 10; }
+    while (t > 0) { t--; if (n < buf.len) { buf[n] = tmp[t]; n++; } }
+    return n;
+}
+
+// Set a penalty bar AND store it in core area state, so a late joiner is replayed
+// the new value (unlike a plugin emitting a raw HP packet, which only updates the
+// live display). Allocation-free → safe to call from any thread.
+fn void _api_area_set_hp(int area_id, int bar, int value) {
+    if (area_id < 0 || area_id >= _plugin_srv.area_count) return;
+    if (bar != config::PENALTY_BAR_DEFENSE && bar != config::PENALTY_BAR_PROSECUTION) return;
+    if (value < config::PENALTY_BAR_MIN || value > config::PENALTY_BAR_MAX) return;
+    if (bar == config::PENALTY_BAR_DEFENSE) { _plugin_srv.areas[area_id].defense_hp = value; }
+    else { _plugin_srv.areas[area_id].prosecution_hp = value; }
+    // Build "HP#<bar>#<value>#%" on the stack.
+    char[24] buf; usz n = 0;
+    buf[n] = 'H'; n++; buf[n] = 'P'; n++; buf[n] = '#'; n++;
+    n = _hp_put_int(buf[..], n, bar);
+    buf[n] = '#'; n++;
+    n = _hp_put_int(buf[..], n, value);
+    buf[n] = '#'; n++; buf[n] = '%'; n++;
+    broadcast_area(_plugin_srv, area_id, (String)buf[0..n - 1]);
+}
+
 fn void _api_client_mute(void* c) {
     if (c == null) return;
     ((client::Client*)c).is_muted = true;
@@ -1190,6 +1249,14 @@ fn plugin::PluginAPI build_plugin_api(Server* srv) {
 
         // Custom-reason kick (v6)
         .client_kick_msg         = &_api_client_kick_msg,
+
+        // Plugin enumeration + outbound filter + HDID + HP setter (v7)
+        .get_plugin_count        = &_api_get_plugin_count,
+        .get_plugin_name         = &_api_get_plugin_name,
+        .get_plugin_version      = &_api_get_plugin_version,
+        .register_outbound_filter = &_api_register_outbound_filter,
+        .client_get_hdid         = &_api_client_get_hdid,
+        .area_set_hp             = &_api_area_set_hp,
     };
 }
 

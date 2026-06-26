@@ -303,6 +303,28 @@ alias ApiClientGetStatusTagFn = fn String(void* client);
 // later") uses this. Sends KK#<message>#% and marks the client disconnected.
 alias ApiClientKickMsgFn = fn void(void* client, String message);
 
+// -- Plugin enumeration, outbound filter, HDID, HP setter (v7) --
+//
+// SAME append-only ABI rule. These let a plugin (a) enumerate the OTHER loaded
+// plugins — get_plugin_count / get_plugin_name / get_plugin_version — for a
+// `/plugins` readout (the optional `plugin_health` plugin); (b) transform every
+// outbound OOC server message via register_outbound_filter, the only hook on
+// *outbound* text (the optional `terse_mode` plugin shortens built-in replies with
+// it); (c) read the raw HDID (hardware id), the way client_get_ipid exposes the
+// hashed IP; and (d) set a penalty bar through area_set_hp so the change is stored
+// in core area state and replayed to late joiners (unlike emitting a raw HP packet,
+// which only updates the live display). The outbound filter writes into a caller
+// buffer — fn int(void* client, String input, char* out, int max) -> byte length —
+// and MUST be allocation-free. It returns < 0 to leave the message unchanged (the
+// cheap pass-through case), or the number of bytes written to `out` otherwise.
+alias ApiGetPluginCountFn         = fn int();
+alias ApiGetPluginNameFn          = fn String(int);
+alias ApiGetPluginVersionFn       = fn String(int);
+alias ApiOutboundMsgFilter        = fn int(void*, String, char*, int);
+alias ApiRegisterOutboundFilterFn = fn void(ApiOutboundMsgFilter);
+alias ApiClientGetHdidFn          = fn String(void*);
+alias ApiAreaSetHpFn              = fn void(int, int, int);
+
 // ============================================================
 // Plugin API — passed to plugins during init
 // ============================================================
@@ -403,8 +425,19 @@ struct PluginAPI {
     // ABI rule: client_kick_msg is now the current tail, so the next new field
     // goes AFTER it — never insert or reorder. Plugins compiled against v1–v5
     // stop reading at client_get_status_tag and never touch this one.
-    // New fields MUST always be added here, at the end — never inserted.
     ApiClientKickMsgFn         client_kick_msg;
+
+    // Appended after the v6 block (v7) — plugin enumeration, an outbound
+    // server-message filter, raw HDID, and a penalty-bar setter. SAME append-only
+    // ABI rule: client_kick_msg keeps its exact offset, so plugins compiled against
+    // v1–v6 stop reading there and never touch these. New fields MUST always be
+    // added AFTER area_set_hp — never inserted.
+    ApiGetPluginCountFn         get_plugin_count;
+    ApiGetPluginNameFn          get_plugin_name;
+    ApiGetPluginVersionFn       get_plugin_version;
+    ApiRegisterOutboundFilterFn register_outbound_filter;
+    ApiClientGetHdidFn          client_get_hdid;
+    ApiAreaSetHpFn              area_set_hp;
 }
 
 // ============================================================
@@ -654,6 +687,10 @@ fn void unload_all(PluginManager* pm) {
     pm.hook_count    = 0;
     pm.lifecycle_hook_count = 0;
     pm.conn_filter_count    = 0;
+
+    // Outbound message filters (v7) live in the client module's globals, not the
+    // manager — clear them too so a reload never calls into an unloaded plugin.
+    client::clear_outbound_filters();
 
     io::printn("[plugins] All plugins unloaded.");
 }

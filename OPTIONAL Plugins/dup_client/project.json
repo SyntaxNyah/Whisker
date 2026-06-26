@@ -1,0 +1,13 @@
+{
+    "version": "1.0.0",
+    "authors": ["Whisker Community"],
+    "langrev": "1",
+    "warnings": ["no-unused"],
+    "targets": {
+        "dup_client": {
+            "type": "dynamic-lib",
+            "sources-override": ["../dup_client.c3"],
+            "linked-libraries": ["c"]
+        }
+    }
+}

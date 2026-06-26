@@ -2093,6 +2093,82 @@ it to turn away unknown IPIDs with a clear not-a-ban notice; `ip_guard` and any
 moderation plugin can use it for meaningful kick reasons too. Backwards
 compatible exactly like v2–v5: appended at the end, old plugins untouched.
 
+## What the v7 API Adds — Enumeration, Outbound Filter, HDID, HP Setter
+
+v7 appends six fields, closing gaps the [What Plugins Can't Do](#what-plugins-cant-do-yet)
+section used to list. Append-only as always — plugins compiled against v1–v6 never
+read these and keep working untouched. Standalone plugins append the six fields to
+the end of their struct copy, exactly as `OPTIONAL Plugins/plugin_health.c3` and
+`terse_mode.c3` show.
+
+| Field | Signature | Purpose |
+|-------|-----------|---------|
+| `get_plugin_count` | `fn int()` | How many plugins are loaded. |
+| `get_plugin_name` | `fn String(int)` | Name of loaded plugin `i`. |
+| `get_plugin_version` | `fn String(int)` | Version of loaded plugin `i`. |
+| `register_outbound_filter` | `fn void(fn int(void*, String, char*, int))` | Transform every outbound OOC **server message** before it is sent. |
+| `client_get_hdid` | `fn String(void*)` | The client's hashed **HDID** (hardware id) — the counterpart of `client_get_ipid`. |
+| `area_set_hp` | `fn void(int area, int bar, int value)` | Set a penalty bar **and store it in core area state** so late joiners get the new value (unlike emitting a raw `HP` packet). |
+
+### Enumerating loaded plugins
+
+```c3
+// /plugins — list every loaded plugin (the optional `plugin_health` plugin).
+fn void cmd_plugins(void* c, String args) {
+    int count = api.get_plugin_count();
+    for (int i = 0; i < count; i++) {
+        char[160] m; usz n = 0;
+        n = put_int(m[..], n, i + 1);
+        n = put_str(m[..], n, ". ");
+        n = put_str(m[..], n, api.get_plugin_name(i));
+        n = put_str(m[..], n, " v");
+        n = put_str(m[..], n, api.get_plugin_version(i));
+        api.client_send_msg(c, (String)m[0..n - 1]);
+    }
+}
+```
+
+### Filtering outbound server messages
+
+`register_outbound_filter` is the only hook on what the server **sends**. Your
+filter receives the client and the message, writes a transformed version into the
+provided buffer and returns its byte length — or returns **a negative value to
+leave the message unchanged** (the cheap pass-through). It must be allocation-free
+(it runs inside the send path), and it is cleared automatically on `/reload`.
+
+```c3
+// Shorten server messages for opted-in players (the optional `terse_mode` plugin).
+fn int terse_filter(void* c, String input, char* out, int max) {
+    int uid = api.client_get_uid(c);
+    if (!is_opted(uid)) return -1;             // not opted in -> unchanged (free)
+    int o = 0;
+    foreach (char ch : input) {                // (toy example: strip '=' decoration)
+        if (ch == '=') continue;
+        if (o < max) { out[o] = ch; o++; }
+    }
+    return o;                                   // number of bytes written to `out`
+}
+
+// in whisker_plugin_init:
+api.register_outbound_filter(&terse_filter);
+```
+
+Only OOC **server** messages (the built-in notices) flow through the filter — never
+IC, OOC chat, or other plugins' broadcasts. (There is still no hook on those.)
+
+### HDID and the HP setter
+
+```c3
+String hdid = api.client_get_hdid(c);   // hashed hardware id, like client_get_ipid
+api.area_set_hp(area, 1, 5);            // defense bar -> 5/10 (stored in core state)
+api.area_set_hp(area, 2, 8);            // prosecution bar -> 8/10
+```
+
+`area_set_hp`'s `bar` is 1 (defense) or 2 (prosecution), `value` 0–10. Because it
+updates the core's stored bar (not just the live display), a player who joins right
+afterward is replayed the correct value — the fix for the `penalty_bars` late-joiner
+caveat. It's allocation-free, so it's safe to call from a background thread too.
+
 ## Hookable Packet Headers
 
 These are the AO2 packet headers the server processes. You can hook any
@@ -2212,19 +2288,20 @@ movement.
 
 ## What Plugins Can't Do (yet)
 
-A few things the current Plugin API deliberately doesn't expose — worth knowing
-before you design around them:
+The API keeps growing — several former limits were closed by
+[v7](#what-the-v7-api-adds--enumeration-outbound-filter-hdid-hp-setter): outbound
+server-message rewriting (`register_outbound_filter`), plugin enumeration
+(`get_plugin_count`/`_name`/`_version`), reading the HDID (`client_get_hdid`), and
+setting a penalty bar in core state (`area_set_hp`). What's still missing:
 
-- **No outbound-message hook.** Hooks fire on packets the client *sends*; there is
-  no hook on what the server *sends back*. A plugin can't rewrite, shorten, or
-  recolour the core's own server messages (so a "terse mode" for built-in replies
-  can't be a plugin) — it can only build its own outgoing packets.
-- **No plugin enumeration.** A plugin can't list the *other* loaded plugins (the
-  manager isn't exposed), so an in-game `/plugins` readout would need a small core
-  addition.
-- **No ban primitive, and no setter for some core-owned state** (penalty bars, area
-  name): see the notes above on `client_kick_msg` vs a real ban, and on emitting
-  packets whose state the core owns.
+- **No hook on IC/OOC *chat*.** v7's outbound filter covers the server's own OOC
+  notices, not the chat broadcast path — you still can't rewrite another player's
+  delivered line except by consuming + rebuilding it (see the packet-rewrite note
+  above).
+- **No real ban primitive.** You get `client_kick` / `client_kick_msg` (and can
+  remember an IPID to re-kick on rejoin), but not a true ban — pair with core
+  `/ban`.
+- **No area-rename setter.** `area_get_name` exists; there's no `area_set_name` yet.
 
 These are candidates for future append-only API additions — open an issue if one
 blocks something you're building.

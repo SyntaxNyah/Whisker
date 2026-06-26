@@ -2024,6 +2024,99 @@ don't.
 
 ---
 
+### Config Validator
+
+**Compiled:** `Windows/config_validator.dll` · `Linux/config_validator.so`
+**Source:** `config_validator.c3`
+
+Sanity-checks your config at startup and warns about common mistakes — a missing
+`characters.txt`, a port out of range, WSS enabled without a cert that opens — so a
+typo shows up as a clear console warning instead of a confusing failure. Re-run any
+time with `/configcheck` (BAN perm). It only **warns**; it never changes anything.
+
+**Performance:** all its work happens once at load (and on `/configcheck`); **no
+packet hooks**, so it has no effect on the running server. **Why optional:** the
+checks are heuristic and a seasoned operator doesn't need them.
+
+---
+
+### Command Usage Stats
+
+**Compiled:** `Windows/cmd_stats.dll` · `Linux/cmd_stats.so`
+**Source:** `cmd_stats.c3`
+
+Counts which OOC commands get used most: `/cmdstats [N]`. Useful for pruning dead
+commands or spotting a spammed one. It records only the command *word* (never the
+arguments, so a mistyped `/login <password>` can't leak), and counts persist in
+`config/cmd_stats.txt`.
+
+**Performance:** one `CT` hook that returns instantly for any line that isn't a
+command; a command costs a short token-extract + small-table bump. **Why optional:**
+an ops/insight tool most servers don't need running.
+
+---
+
+### Duplicate-Client Detector
+
+**Compiled:** `Windows/dup_client.dll` · `Linux/dup_client.so`
+**Source:** `dup_client.c3`
+
+Flags (never blocks) when one IPID joins many times in a short window — a
+reconnect-spammer, a client stuck in a join loop, or a pile of sessions. Staff get
+a coalesced heads-up; nobody is turned away.
+
+**Configuration — `[dup_client]`:** `enabled` (true), `threshold` (4),
+`window_seconds` (60), `cooldown_seconds` (120), `alert_permission` (4).
+
+**Performance:** runs once per *join*, an O(1) update on a small per-IPID table;
+nothing on the chat path. **Why optional:** lots of people legitimately reconnect,
+so it's a hint (alert-only) — pair with `conn_cap` / `ip_guard` / `/ban` to act.
+
+---
+
+### Plugin Health
+
+**Compiled:** `Windows/plugin_health.dll` · `Linux/plugin_health.so`
+**Source:** `plugin_health.c3`
+
+Lists the plugins currently loaded, with version: `/plugins`. Handy for support
+("what plugins do you run?") and for confirming a drop-in actually loaded.
+
+> **Needs the v7 API.** This is the reference example of the v7 plugin-enumeration
+> calls (`get_plugin_count` / `get_plugin_name` / `get_plugin_version`). It runs on
+> any Whisker with the v7 API; don't load it on an older server.
+
+**Performance:** one command, **no packet hooks** — it reads the loaded-plugin table
+only when you type `/plugins`. **Why optional:** most servers don't need an in-game
+plugin list.
+
+---
+
+### Terse Mode
+
+**Compiled:** `Windows/terse_mode.dll` · `Linux/terse_mode.so`
+**Source:** `terse_mode.c3`
+
+Lets a player shorten the server's OOC notices **for themselves** — nice on a phone
+where long, decorated messages fill the screen. Each player opts in with `/terse`;
+the built-in replies are then trimmed (collapsed whitespace, optional length cap,
+plus operator-defined phrase replacements) before being sent to *that* player.
+Everyone else sees the normal messages.
+
+**Configuration — `config/terse_mode.txt`:** `collapse_spaces` (true), `max_length`
+(0 = no cap), and repeatable `replace <long>|<short>` phrase rules.
+
+> **Needs the v7 API.** This is the reference example of the v7
+> `register_outbound_filter` hook — the only hook on outbound server text.
+
+**Performance:** with it loaded, every OOC server message runs through the filter,
+but a player who hasn't enabled terse mode (the default) takes the free
+"unchanged" path; only opted-in players pay the transform. Nothing on the IC/OOC
+chat path. **Why optional:** rewording the server's own messages is a niche,
+opinionated preference.
+
+---
+
 > **Note on `/reload`:** the plugins that spawn a background thread
 > (`tor_blocker`, `vpn_scorer`, `discord_modcall`, `discord_relay`, `status_feed`,
 > and `slowmode` in queue mode) share the same small `/reload` caveat as the existing

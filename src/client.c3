@@ -218,9 +218,62 @@ fn void Client.send_simple(&self, String header) {
     self.send_raw(protocol::build_simple(header));
 }
 
+// ============================================================
+// Outbound server-message filters (Plugin API v7)
+// ============================================================
+//
+// A plugin can register a filter that transforms the text of every OOC SERVER
+// message before it is sent (see send_server_message below) — the only hook on
+// *outbound* text. The optional `terse_mode` plugin uses it to shorten built-in
+// replies. The registry lives in this module (not the plugin manager) so client.c3
+// needs no new import; plugin::unload_all calls clear_outbound_filters() on reload
+// so stale pointers into an unloaded plugin are never called.
+//
+// Filter signature: fn int(void* client, String input, char* out, int max) —
+// write the transformed message into `out` (up to `max` bytes) and return its
+// byte length. Must be allocation-free (it runs inside the send path).
+alias OutboundMsgFilterFn = fn int(void*, String, char*, int);
+const int MAX_OUTBOUND_FILTERS = 8;
+OutboundMsgFilterFn[MAX_OUTBOUND_FILTERS] outbound_filters;
+int outbound_filter_count = 0;
+
+fn void register_outbound_filter(OutboundMsgFilterFn f) {
+    if (f != null && outbound_filter_count < MAX_OUTBOUND_FILTERS) {
+        outbound_filters[outbound_filter_count] = f;
+        outbound_filter_count++;
+    }
+}
+
+fn void clear_outbound_filters() {
+    outbound_filter_count = 0;
+}
+
 // Send an OOC message (CT packet) from the server.
 fn void Client.send_server_message(&self, String message) {
-    String[] fields = { config::SERVER_SOFTWARE, message, "1" };
+    String msg = message;
+    if (outbound_filter_count > 0) {
+        // Run the text through each filter, ping-ponging between two buffers so a
+        // filter never reads and writes the same memory. No filters registered =>
+        // this whole block is skipped and behaviour is byte-for-byte unchanged.
+        char[4096] buf_a;
+        char[4096] buf_b;
+        char* cur = null; // the buffer `msg` currently points into (null = original)
+        for (int i = 0; i < outbound_filter_count; i++) {
+            // Always write to the buffer `msg` is NOT in, so a filter never reads
+            // and writes the same memory (parity-based selection breaks when a
+            // filter declines and `msg` doesn't advance).
+            char* dst = (cur == &buf_a[0]) ? &buf_b[0] : &buf_a[0];
+            int n = outbound_filters[i]((void*)self, msg, dst, 4096);
+            // A filter returns < 0 to mean "leave it unchanged" (no copy, no
+            // truncation) — so the common pass-through case is free.
+            if (n >= 0) {
+                if (n > 4096) n = 4096;
+                msg = n == 0 ? "" : (String)dst[0..n - 1];
+                cur = dst;
+            }
+        }
+    }
+    String[] fields = { config::SERVER_SOFTWARE, msg, "1" };
     self.send_packet("CT", fields);
 }
 
