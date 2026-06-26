@@ -1914,7 +1914,8 @@ with `feed <url>` lines in `config/vpn_scorer.txt`.
 `alert_permission`, `alert_interval_sec`, `score_unknown`, `auto_update`,
 `update_interval_hours`.
 
-**Performance (the "shit ton of databases, no degradation" part):** every
+**Performance  
+every
 connection is an O(log n) binary search over sorted ranges — a handful of compares
 even across hundreds of thousands of ranges — and **always allows** the
 connection. Downloads and the coalesced, timer-driven alerts run on the background
