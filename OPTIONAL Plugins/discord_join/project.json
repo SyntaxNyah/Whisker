@@ -1,0 +1,13 @@
+{
+    "version": "1.0.0",
+    "authors": ["Whisker Community"],
+    "langrev": "1",
+    "warnings": ["no-unused"],
+    "targets": {
+        "discord_join": {
+            "type": "dynamic-lib",
+            "sources-override": ["../discord_join.c3"],
+            "linked-libraries": ["c"]
+        }
+    }
+}

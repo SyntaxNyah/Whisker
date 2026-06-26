@@ -2118,9 +2118,98 @@ opinionated preference.
 
 ---
 
+### Day/Night Cycle
+
+**Compiled:** `Windows/day_night.dll` · `Linux/day_night.so`
+**Source:** `day_night.c3`
+
+Auto-swaps area backgrounds by the real-world clock — a daytime courtroom in the
+morning, a night one after dark. Define any number of periods; it switches each
+configured area's background when the clock crosses into a new one.
+
+**Configuration — `config/day_night.txt`:** `enabled`, `utc_offset`, repeatable
+`period <hour 0-23> <background>`, optional `area <index>` (omit = all areas).
+Command `/daynight` shows the current period. Backgrounds must exist client-side.
+
+**Performance:** **no background thread** — it rides the `CH` keepalive + `MS` and
+acts only when the clock actually crosses a period boundary (a couple of times a
+day), comparing two ints per packet. Each switch uses the core's
+`area_set_background` (stored + broadcast, so late joiners get it). **Why optional:**
+ambient theming is a nicety that needs matching day/night backgrounds.
+
+---
+
+### Area Ownership
+
+**Compiled:** `Windows/area_ownership.dll` · `Linux/area_ownership.so`
+**Source:** `area_ownership.c3`
+
+Lets a player **own** an area: while an owner is in their area they're automatically
+made a **CM**, so they control its lock/status/music/background — their room, their
+rules — without a mod granting it each time. Ownership is keyed on **IPID or HDID**
+(a reconnect still counts) and persists in `config/area_owners.txt`.
+
+**Commands:** `/claim` (claim an unowned area, if allowed), `/unclaim` (owner/mod),
+`/areaowner` (show, or `/areaowner <uid>` to assign — mod).
+**Config — `[area_ownership]`:** `allow_claim` (true), `announce` (true).
+
+> **Needs the v7 API** (`client_get_hdid`). Best paired with `case_manager` so CMs
+> have commands to use. Identity is by IPID/HDID — not "accounts" (the API doesn't
+> expose a login).
+
+**Performance:** **no packet hooks** — works off the lifecycle JOIN/UPDATE events,
+acting only on a real area change (it diffs each player's last area). **Why
+optional:** persistent per-area ownership is a strong model — right for a hub of
+personal rooms, wrong for shared/neutral areas.
+
+---
+
+### GDPR / Player Data
+
+**Compiled:** `Windows/gdpr.dll` · `Linux/gdpr.so`
+**Source:** `gdpr.c3`
+
+Helps answer data requests: `/gdpr <uid>` dumps the live data held on an online
+player (UID, IPID, IP, HDID, character, showname, OOC name, area), and `/gdpr forget
+<ipid>` records an erasure request and **deletes that IPID's lines from the
+`chat_logger` log files** (scanning the log directory). Mod-gated (BAN perm).
+
+> **Honest scope:** it reaches what the API exposes plus the chat logs (whose format
+> it knows) — **not** the core ban list or other plugins' private files. A strong
+> first step, not a complete cross-server wipe; finish other stores by hand.
+> **Needs the v7 API** (`client_get_hdid`).
+
+**Performance:** one command, **no packet hooks** — nothing runs until a mod uses
+it. **Why optional:** only operators with retention/erasure obligations need it.
+
+---
+
+### Discord Join Feed
+
+**Compiled:** `Windows/discord_join.dll` · `Linux/discord_join.so`
+**Source:** `discord_join.c3`
+
+Posts a short line to a Discord channel when a player **connects** (and optionally
+disconnects), via an incoming webhook — a live who's-coming-and-going feed. Inactive
+until you set a webhook URL.
+
+**Configuration — `config/discord_join.txt`:** `webhook_url` (required),
+`username`, `include_ipid` (true), `relay_leave` (false), `mention`.
+
+**Performance:** the JOIN/LEAVE hook builds the post allocation-free and hands it to
+a **background worker thread** that does the `curl` — nothing blocks the player or
+the accept path. Shadow mods are never announced.
+
+**Why optional — Discord caveats:** it sends player data (IPID/area/counts) off your
+server to Discord, it's a third-party dependency, and on a busy server Discord may
+rate-limit the webhook. Shares `discord_modcall`'s worker design and its "don't
+*depend* on Discord" warning.
+
+---
+
 > **Note on `/reload`:** the plugins that spawn a background thread
-> (`tor_blocker`, `vpn_scorer`, `discord_modcall`, `discord_relay`, `status_feed`,
-> and `slowmode` in queue mode) share the same small `/reload` caveat as the existing
+> (`tor_blocker`, `vpn_scorer`, `discord_modcall`, `discord_join`, `discord_relay`,
+> `status_feed`, and `slowmode` in queue mode) share the same small `/reload` caveat as the existing
 > `server_advertiser` / `ip_guard` plugins — a hot-reload can briefly race the
 > background thread as the library is unloaded. A full server restart is the clean
 > way to update those; `/reload` is fine for the command/hook-only plugins.

@@ -1,0 +1,13 @@
+{
+    "version": "1.0.0",
+    "authors": ["Whisker Community"],
+    "langrev": "1",
+    "warnings": ["no-unused"],
+    "targets": {
+        "area_ownership": {
+            "type": "dynamic-lib",
+            "sources-override": ["../area_ownership.c3"],
+            "linked-libraries": ["c"]
+        }
+    }
+}
