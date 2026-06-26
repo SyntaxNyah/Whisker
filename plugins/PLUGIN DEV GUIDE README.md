@@ -2133,6 +2133,40 @@ api.register_hook("MS", &on_ic_message, "My Plugin");
 api.register_hook("MC", &on_music_change, "My Plugin");
 ```
 
+## Emitting Packets the Client Understands (Server→Client)
+
+The [Hookable Packet Headers](#hookable-packet-headers) table above is every
+header the client **sends to the server** — those are what you `register_hook` on.
+*Sending* is the other direction, and it isn't limited to that list: with
+`broadcast_area_raw`, `broadcast_all_raw`, `broadcast_perm_raw`, or
+`client_send_raw` you can put **any** AO2 wire packet on the socket, including
+server→client packets the Whisker core never generates itself. The `player_list`
+plugin does this with `PR`/`PU` (the 2.11 roster); the `court_timer` plugin does
+it with `TI` (the courtroom countdown widget):
+
+```c3
+// TI#<id>#<type>#<value_ms>#%  — drive the client's timer widget directly.
+// type 0 = set + start a client-side countdown, 1 = pause, 2 = show, 3 = hide.
+api.broadcast_area_raw(area, "TI#0#0#300000#%");   // start a 5:00 countdown
+```
+
+Two things to keep in mind when you emit a packet the core doesn't know about:
+
+- **It's only as real as the client's support for it.** You're talking straight to
+  the client's packet handler, so the feature works exactly as far as the client
+  does — the AO2 2.x desktop client renders `TI`/`PR`/`PU`, but a fork, an older
+  client, or a webAO theme without that widget just ignores the bytes. Treat it as
+  best-effort presentation, never as authoritative state, and give non-supporting
+  clients a fallback (an OOC line) where it matters. The server keeps no record of
+  it either — if you need the state back (to sync a late joiner, to announce an
+  expiry), the plugin has to hold it itself, as `court_timer` does.
+- **Build it allocation-free and escape your fields.** Same rule as any wire data
+  you construct in a handler (see [Threading in Plugins](#threading-in-plugins)):
+  assemble it in a fixed `char[]` with `put_str` / `put_int`, escape any dynamic
+  text (`#`→`<num>`, `&`→`<and>`, `%`→`<percent>`, `$`→`<dollar>`), and end with
+  `#%`. Use the `*_raw` send functions for a packet you built yourself — the
+  `*_msg` ones are for plain OOC text and wrap your string in a `CT` for you.
+
 ## Troubleshooting Flowchart
 
 Plugin not loading? Walk through this:

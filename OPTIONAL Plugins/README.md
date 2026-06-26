@@ -1518,6 +1518,146 @@ Discord" discussion.
 
 ---
 
+### Court Timer
+
+**Compiled:** `Windows/court_timer.dll` · `Linux/court_timer.so`
+**Source:** `court_timer.c3`
+
+Recess / debate **countdown timers** for an area, shown on the AO2 client's own
+timer widget. A CM or moderator runs `/timer 5:00` and everyone in the area sees a
+live clock tick down to zero — for a recess, a timed debate round, a "two minutes
+to present" deadline, or a speedrun clock. Pairs naturally with the `casing`
+plugin: put a visible clock on a cross-examination or a recess.
+
+**Commands:**
+
+| Command | Perm | Description |
+|---------|------|-------------|
+| `/timer <duration> [label]` | CM/mod | Start a countdown. Duration: `5:00`, `1:30:00`, `90`, `1h30m`, `45s`. Optional label, e.g. `/timer 2:30 Recess`. |
+| `/timer pause` | CM/mod | Pause the countdown. |
+| `/timer resume` | CM/mod | Resume a paused countdown. |
+| `/timer stop` | CM/mod | Stop and hide the timer. |
+| `/timer` | anyone | Show the current timer's remaining time. |
+
+**Configuration — `config/config.toml` `[court_timer]`:**
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `timer_id` | `0` | Which of the client's timer widgets to drive (0–4; 0 is the big central one). Change it if something else already uses timer 0. |
+| `ooc_echo` | `true` | Post a one-line OOC notice on each action (start/pause/stop). Set `false` for the visual widget only. |
+| `max_duration_seconds` | `86400` | Upper bound on a single timer (default 24h). |
+
+**Setup:** drop into `plugins/`, optional `[court_timer]` config, restart. **To
+remove:** delete the file and restart.
+
+> **⚠️ Client-dependent — and not yet tested against a live client.** The live
+> countdown is driven by the AO2 `TI` packet, which Whisker's core never sends
+> itself; this plugin emits it directly. The modern AO2 2.x **desktop** client
+> renders it, but some forks, older clients, and webAO themes without a timer
+> widget will simply ignore it — those players still get the `ooc_echo` text, just
+> not the ticking clock. The plugin is built to the confirmed `TI` wire format and
+> **compiles and loads cleanly, but has not yet been verified against a live AO2
+> client** — treat the visual widget as best-effort until you've confirmed it on
+> the clients your server actually uses. The OOC echo is the always-works channel.
+
+**Why is this a plugin and not built-in?** Most areas never want a clock on screen
+— it's a tool for structured play (debates, timed cases, organised recesses), not
+casual chat or freeform RP. It's also client-dependent (above), so forcing it on
+every server would be wrong. Opt-in: the servers that run timed formats add it;
+everyone else never sees it.
+
+**Design notes (for developers):**
+
+- Emits the AO2 **`TI`** timer packet (`TI#id#type#value_ms#%`) straight onto the
+  wire with `broadcast_area_raw` — a header the core itself never generates. Type
+  `0` sets + starts a client-side countdown (the client runs the clock itself, so
+  the server sends **one** packet, not per-second updates), `1` pauses, `2` shows,
+  `3` hides; the value is in milliseconds.
+- Expiry ("…finished.") is announced from the **`CH`/`MS` packet hooks, not a
+  background thread**, so there's nothing for a `/reload` to race — every client
+  sends `CH` ~every 45s even while idle, which is plenty to notice a zeroed clock
+  (the client already shows `0:00` itself).
+- A player who walks **into** an area mid-countdown is synced the current time via
+  the lifecycle **`UPDATE`** hook — but only on a genuine area change (it diffs a
+  uid→area roster, since `UPDATE` also fires on character picks and every OOC line).
+- Allocation-free throughout (fixed `char[]` buffers + `*_raw` broadcasts), so
+  every path is safe on the server's client threads.
+
+**Limits:**
+
+| Limit | Value |
+|-------|-------|
+| Tracked areas | 128 |
+| Tracked players (area-entry sync) | 1024 |
+| Label length | 63 bytes |
+| Max single duration | `max_duration_seconds` (default 86400) |
+
+> **Reload note:** timer state lives only in the plugin, so a `/reload` makes the
+> server forget any running timers (the client widgets keep counting locally until
+> they hit zero). Prefer a clean restart if a timer is live.
+
+---
+
+### Idle Kick
+
+**Compiled:** `Windows/idle_kick.dll` · `Linux/idle_kick.so`
+**Source:** `idle_kick.c3`
+
+Disconnects players who have gone silent for too long, to free slots on a busy or
+capped server. A player who hasn't sent IC, OOC, or a music/area change in
+`timeout_seconds` is (optionally warned, then) kicked with a friendly **non-ban**
+notice. Complements `afk`: where `afk` only *labels* an away player, `idle_kick`
+actually reclaims the slot.
+
+**Command:** `/idlekick` (moderator) — show the current settings and how many
+players are being tracked.
+
+**Configuration — `config/config.toml` `[idle_kick]`:**
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `enabled` | `true` | Master switch (keep the file installed but dormant until you need it). |
+| `timeout_seconds` | `1800` | Silence before a kick (30 min). A keepalive does **not** count as activity. |
+| `warn_seconds` | `60` | Warn the player this many seconds before the kick (`0` = no warning). |
+| `exempt_mods` | `true` | Never kick authenticated moderators. |
+| `exempt_cms` | `true` | Never kick a CM of their current area. |
+| `message` | *(non-ban default)* | The kick reason shown to the player. |
+
+**Setup:** drop into `plugins/`, optional `[idle_kick]` config, restart. **To
+remove:** delete the file and restart.
+
+**Why is this a plugin and not built-in?** Disconnecting lurkers is the right call
+on a slot-constrained server and a hostile one elsewhere — plenty of AO
+communities treat leaving a client open to watch quietly as completely normal. It
+only earns its keep when capacity is scarce (a popular server bumping its cap, or
+one running `conn_cap`), and the right timeout is wildly server-specific. So it's
+opt-in, and pairs with `afk` (gentle label) and `conn_cap` (concurrency limit)
+rather than replacing either.
+
+**Design notes (for developers):**
+
+- **No background thread.** The idle check rides the **`CH` (keepalive) packet
+  hook** — clients send `CH` ~every 45s even while idle, ample for a minutes-long
+  timeout — so the disconnect runs on the player's **own** server thread (the
+  safest place to close a connection) and there's no thread for a `/reload` to
+  race. It's the "timers without threads" pattern from the Plugin Dev Guide applied
+  to presence.
+- Activity = `MS` / `CT` / `MC` (IC, OOC, music/area change); a keepalive
+  deliberately does not reset the timer. The kick uses the v6 **`client_kick_msg`**
+  for a meaningful non-ban reason, and a pending warning is cleared the moment the
+  player does anything (so a return-then-idle player is warned again).
+- A `/reload` empties the roster; the `CH` hook re-adds any unrecognised client
+  with a **fresh** timer, so a reload never instantly kicks anyone (fail-open).
+
+**Limits:**
+
+| Limit | Value |
+|-------|-------|
+| Tracked players | 1024 |
+| Kick reason length | 255 bytes |
+
+---
+
 > **Note on `/reload`:** the plugins that spawn a background thread
 > (`tor_blocker`, `discord_modcall`, `discord_relay`, `status_feed`, and
 > `slowmode` in queue mode) share the same small `/reload` caveat as the existing

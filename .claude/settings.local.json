@@ -54,7 +54,9 @@
       "Bash(echo \"=== exit: $? ===\")",
       "Bash(echo \"=== discord exit: $? ===\")",
       "Bash(\"C:\\\\c3c\\\\c3\\\\c3c.exe\" build *)",
-      "Bash(echo \"=== server build exit: $? ===\")"
+      "Bash(echo \"=== server build exit: $? ===\")",
+      "PowerShell($a = Get-FileHash -Algorithm SHA256 \"C:\\\\Users\\\\arbok\\\\Documents\\\\GitHub\\\\Whisker\\\\plugins\\\\PLUGIN DEV GUIDE README.md\"; $b = Get-FileHash -Algorithm SHA256 \"C:\\\\Users\\\\arbok\\\\Documents\\\\GitHub\\\\Whisker\\\\docs\\\\PLUGIN DEV GUIDE README.md\"; \"plugins: $\\($a.Hash\\)\"; \"docs:    $\\($b.Hash\\)\"; if \\($a.Hash -eq $b.Hash\\) { \"IDENTICAL\" } else { \"DIFFERENT\" })",
+      "PowerShell(git *)"
     ]
   }
 }
