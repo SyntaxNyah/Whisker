@@ -1658,6 +1658,123 @@ rather than replacing either.
 
 ---
 
+### Trial Mode / Gavel
+
+**Compiled:** `Windows/trial_mode.dll` · `Linux/trial_mode.so`
+**Source:** `trial_mode.c3`
+
+"Court is in session." A CM or moderator puts an area into trial mode; after that
+only **the floor** — CMs, mods, and players the CM has explicitly recognised — may
+speak IC. Everyone else's IC is held until they're given the floor. OOC stays open,
+so a silenced player can still ask to speak. The missing piece for a controlled
+cross-examination, an orderly witness, or a quiet verdict — pairs with `casing` and
+`court_timer` for a full trial kit.
+
+**Commands** (`/gavel` is a synonym for `/trial`):
+
+| Command | Perm | Description |
+|---------|------|-------------|
+| `/trial on` | CM/mod | Start trial mode in this area. |
+| `/trial off` | CM/mod | End it — IC reopens. |
+| `/trial speak <uid>` | CM/mod | Give a player the floor. |
+| `/trial unspeak <uid>` | CM/mod | Take the floor back. |
+| `/trial` | anyone | Show whether court is in session and who has the floor. |
+
+**Configuration — `config/config.toml` `[trial_mode]`:**
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `announce` | `true` | Post an OOC notice to the area when a session starts/ends. |
+| `message` | *(sane default)* | The notice a silenced player sees when their IC is held. |
+
+**Setup:** drop into `plugins/`, optional `[trial_mode]` config, restart. **To
+remove:** delete the file and restart.
+
+**Why is this a plugin and not built-in?** Silencing everyone but a chosen few is
+exactly the wrong default for a casual or social server — it only makes sense for
+structured courtroom play. Opt-in: add it if you run trials, skip it otherwise.
+
+**Design notes (for developers):**
+
+- A **soft IC gate, not the core mute.** While an area is in session the `MS` hook
+  *consumes* the IC of anyone who isn't a mod, a CM, or on that area's speak list
+  (and tells them so); everyone with the floor passes through (returns `false`).
+  Deliberately **not** `client_mute` — that would clobber a mod's separate mute on
+  release and need a roster to re-apply on join. Gating at the packet means there's
+  nothing to undo: `/trial off` reopens IC instantly.
+- Per-area, lockless, allocation-free, no thread. A `/reload` clears state, so
+  every area falls back to open (fail-open) — re-run `/trial on` if a trial was in
+  progress.
+
+**Limits:**
+
+| Limit | Value |
+|-------|-------|
+| Tracked areas | 128 |
+| Designated speakers per area | 16 |
+
+---
+
+### Penalty Bars
+
+**Compiled:** `Windows/penalty_bars.dll` · `Linux/penalty_bars.so`
+**Source:** `penalty_bars.c3`
+
+Command control of the courtroom **health / penalty bars** (the two 10-segment
+bars the judge docks). Set a bar to an exact value, dock a single penalty, or lock
+the bars so only staff can move them. `casing` only *logs* bar changes today — this
+adds the controls; pairs with it and `court_timer` for a trial kit.
+
+**Commands:**
+
+| Command | Perm | Description |
+|---------|------|-------------|
+| `/hp` | anyone | Show both bars. |
+| `/hp def <0-10>` · `/hp pro <0-10>` | CM/mod | Set the defense / prosecution bar. |
+| `/penalty def` · `/penalty pro` | CM/mod | Dock one off that bar. |
+
+**Configuration — `config/config.toml` `[penalty_bars]`:**
+
+| Key | Default | Meaning |
+|-----|---------|---------|
+| `lock` | `false` | Only CMs/mods may move the bars. The core lets **any** client drag them, which trolls abuse — turn this on to stop that. |
+| `announce` | `true` | Post an OOC line to the area on a command change (off = a private confirmation to the actor only). |
+
+**Setup:** drop into `plugins/`, optional `[penalty_bars]` config, restart. **To
+remove:** delete the file and restart.
+
+> **⚠️ Late-joiner caveat.** The core stores each area's authoritative bar values
+> and replays them to a joining client; there is no Plugin-API setter for that
+> stored value. So a bar this plugin sets by command updates the display for
+> everyone **present** but not the core's stored copy — a player who joins right
+> afterwards (before any client next moves a bar) sees the older value until the
+> next change. In normal trials the judge's client keeps moving the bars (which the
+> core *does* store), so it only shows in that gap. Treat it as a display nicety,
+> not authoritative state. (A `/reload` likewise resets the plugin's cache to 10/10
+> until the next observed `HP`.)
+
+**Why is this a plugin and not built-in?** The bars only matter in casing/trial
+play; social servers never touch them. And the `lock` policy is opinionated — it
+stops non-staff from using a feature the base client offers everyone. Opt-in.
+
+**Design notes (for developers):**
+
+- Setting a bar emits the AO2 **`HP`** packet (`HP#bar#value#%`, bar 1 = defense,
+  2 = prosecution, value 0–10) with `broadcast_area_raw`. An `HP` hook keeps a
+  per-area cache in sync with normal client-driven changes (so `/hp` and `/penalty`
+  stay accurate) and, when `lock` is on, consumes bar changes from non-staff.
+- Allocation-free, no thread. See the Plugin Dev Guide note on **emitting packets
+  whose state the core owns** for the late-joiner nuance above.
+
+**Limits:**
+
+| Limit | Value |
+|-------|-------|
+| Tracked areas | 128 |
+| Bar range | 0–10 |
+
+---
+
 > **Note on `/reload`:** the plugins that spawn a background thread
 > (`tor_blocker`, `discord_modcall`, `discord_relay`, `status_feed`, and
 > `slowmode` in queue mode) share the same small `/reload` caveat as the existing

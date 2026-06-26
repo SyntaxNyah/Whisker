@@ -2166,6 +2166,18 @@ Two things to keep in mind when you emit a packet the core doesn't know about:
   text (`#`→`<num>`, `&`→`<and>`, `%`→`<percent>`, `$`→`<dollar>`), and end with
   `#%`. Use the `*_raw` send functions for a packet you built yourself — the
   `*_msg` ones are for plain OOC text and wrap your string in a `CT` for you.
+- **If the core *owns* that state, you're only changing the display.** Some
+  server→client packets mirror state the core stores and **replays to a late
+  joiner** — the penalty bars (`HP`, kept in `area.defense_hp` / `prosecution_hp`),
+  and area status / lock / background. Emitting the packet raw updates everyone
+  *present* but not the core's stored copy, so a client that joins right afterward
+  is replayed the **old** value until the next real change. Where the API has a
+  dedicated setter — `area_set_background`, `area_set_lock`, `area_set_status` —
+  prefer it: those update the core's state *and* broadcast. There is no setter for
+  the penalty bars, so the optional `penalty_bars` plugin emits `HP` directly and
+  documents the late-joiner gap as a known limit. Rule of thumb: raw-emit for
+  ephemeral things the core doesn't track (a `TI` countdown); use the setter for
+  anything the core persists.
 
 ## Troubleshooting Flowchart
 

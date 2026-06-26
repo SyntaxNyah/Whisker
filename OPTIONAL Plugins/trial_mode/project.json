@@ -1,0 +1,13 @@
+{
+    "version": "1.0.0",
+    "authors": ["Whisker Community"],
+    "langrev": "1",
+    "warnings": ["no-unused"],
+    "targets": {
+        "trial_mode": {
+            "type": "dynamic-lib",
+            "sources-override": ["../trial_mode.c3"],
+            "linked-libraries": ["c"]
+        }
+    }
+}
