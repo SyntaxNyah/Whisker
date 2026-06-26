@@ -1,0 +1,13 @@
+{
+    "version": "1.0.0",
+    "authors": ["Whisker Community"],
+    "langrev": "1",
+    "warnings": ["no-unused"],
+    "targets": {
+        "vpn_scorer": {
+            "type": "dynamic-lib",
+            "sources-override": ["../vpn_scorer.c3"],
+            "linked-libraries": ["c"]
+        }
+    }
+}

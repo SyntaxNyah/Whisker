@@ -1,0 +1,13 @@
+{
+    "version": "1.0.0",
+    "authors": ["Whisker Community"],
+    "langrev": "1",
+    "warnings": ["no-unused"],
+    "targets": {
+        "shadow_mute": {
+            "type": "dynamic-lib",
+            "sources-override": ["../shadow_mute.c3"],
+            "linked-libraries": ["c"]
+        }
+    }
+}

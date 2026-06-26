@@ -2179,6 +2179,56 @@ Two things to keep in mind when you emit a packet the core doesn't know about:
   ephemeral things the core doesn't track (a `TI` countdown); use the setter for
   anything the core persists.
 
+## Reading Common Packet Fields
+
+Hooks get the packet as `void*`; read fields with `api.packet_get_field(pkt, i)`
+(already DECODED — don't unescape again) and `api.packet_get_field_count(pkt)`.
+The layout of the packets you'll hook most:
+
+**`MS` — IC message** (the client→server form a hook sees; the core requires ≥15 fields):
+
+| Field | Meaning | Field | Meaning |
+|------:|---------|------:|---------|
+| 0 | desk mod | 8 | char id |
+| 1 | pre-anim | 9 | sfx delay |
+| 2 | character (folder) | **10** | **shout / objection** (`0` or empty = none) |
+| 3 | emote | 11 | evidence |
+| 4 | **message text** | 12 | flip |
+| 5 | side / position | 13 | realization |
+| 6 | sfx | 14 | text colour |
+| 7 | emote mod | 15 | showname |
+
+Fields 16+ are pairing / extension fields. (`objection_guard` reads field 10;
+`word_cloud` reads field 4; `shadow_mute` rebuilds the whole packet — see
+`handle_ms` in `packets.c3` for the server→client relay form with pairing.)
+
+**`CT` — OOC message:** field 0 = OOC name, field 1 = message. A message starting
+with `/` is a command — skip those (so a logger never records `/login <password>`).
+
+**`MC` — music change *or* area move:** field 0 is the target. If it contains a
+`.` it's a **song filename** (a music change); with no `.` it's an **area name**
+(a move). `music_spam_guard` uses exactly this to cap songs without touching
+movement.
+
+## What Plugins Can't Do (yet)
+
+A few things the current Plugin API deliberately doesn't expose — worth knowing
+before you design around them:
+
+- **No outbound-message hook.** Hooks fire on packets the client *sends*; there is
+  no hook on what the server *sends back*. A plugin can't rewrite, shorten, or
+  recolour the core's own server messages (so a "terse mode" for built-in replies
+  can't be a plugin) — it can only build its own outgoing packets.
+- **No plugin enumeration.** A plugin can't list the *other* loaded plugins (the
+  manager isn't exposed), so an in-game `/plugins` readout would need a small core
+  addition.
+- **No ban primitive, and no setter for some core-owned state** (penalty bars, area
+  name): see the notes above on `client_kick_msg` vs a real ban, and on emitting
+  packets whose state the core owns.
+
+These are candidates for future append-only API additions — open an issue if one
+blocks something you're building.
+
 ## Troubleshooting Flowchart
 
 Plugin not loading? Walk through this:

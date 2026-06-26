@@ -1775,9 +1775,258 @@ stops non-staff from using a feature the base client offers everyone. Opt-in.
 
 ---
 
+### Shadow Mute
+
+**Compiled:** `Windows/shadow_mute.dll` · `Linux/shadow_mute.so`
+**Source:** `shadow_mute.c3`
+
+The perfect troll tool. A mod shadow-mutes a target; from then on the target's IC
+is echoed back to **only themselves** — their client shows their character talking
+normally, so they never realise — while nobody else receives a word. The troll
+talks to an empty room and burns out, thinking they're being calmly ignored.
+
+**Commands** (MUTE perm): `/shadowmute <uid>`, `/unshadowmute <uid>`, `/shadowmutes`.
+The target is never notified. `sticky = true` (config `[shadow_mute]`) re-applies
+it if the same IPID reconnects.
+
+**Performance:** one `MS` hook that **returns instantly for everyone who isn't
+shadow-muted** (the normal case) — ordinary chat is untouched. Only a muted
+player's own line takes the rebuild-and-echo path, built allocation-free.
+
+**Why optional:** deliberate deception isn't every team's moderation style; some
+prefer an honest visible mute. Opt-in.
+
+**Design note:** it's a soft gate — it consumes the `MS` and rebuilds the
+outgoing relay form (empty pairing) back to the author via `client_send_raw`, so
+their client renders it faithfully while the area stays silent. Never uses
+`client_mute`, so it can't clobber a separate real mute.
+
+---
+
+### Char-Swap Guard
+
+**Compiled:** `Windows/charswap_guard.dll` · `Linux/charswap_guard.so`
+**Source:** `charswap_guard.c3`
+
+Rate-limits rapid character switching ("CC spam") — the trick of flickering
+between characters to lag clients or flood the player list. A normal pick is never
+affected; only a burst is held.
+
+**Configuration — `[charswap_guard]`:** `enabled` (true), `max_swaps` (5),
+`window_seconds` (10), `exempt_mods` (true).
+
+**Performance:** a single hook on the `CC` packet, which fires only when someone
+changes character (rare) — never on the chat path. The check is an O(1) lookup in
+a small fixed table, allocation-free.
+
+**Why optional:** most servers never see swap spam, and some players legitimately
+multi-role quickly, so a blanket limit is the wrong default.
+
+---
+
+### Music-Spam Guard
+
+**Compiled:** `Windows/music_spam_guard.dll` · `Linux/music_spam_guard.so`
+**Source:** `music_spam_guard.c3`
+
+Caps how often a player can change the area's music ("DJ spam"). **Tiered:** mods
+and area CMs (your real DJs) are exempt; regular players get a configurable limit.
+Area **moves** are never affected — only actual song changes.
+
+**Configuration — `[music_spam_guard]`:** `enabled` (true), `max_changes` (4),
+`window_seconds` (10), `exempt_mods` (true), `exempt_cms` (true).
+
+**Performance:** one `MC` hook (the core only sends `MC` on a music change or area
+move). It early-returns instantly on area moves (filename has no `.`) and on
+exempt users; otherwise an O(1) table lookup. Stacks with `jukebox` (which does
+per-user `blockdj`).
+
+**Why optional:** music griefing is a real problem on some servers and a non-issue
+on others, and the right number is community-specific.
+
+---
+
+### Objection-Spam Guard
+
+**Compiled:** `Windows/objection_guard.dll` · `Linux/objection_guard.so`
+**Source:** `objection_guard.c3`
+
+Rate-limits courtroom **shouts** (OBJECTION! / HOLD IT! / TAKE THAT! / custom).
+Spamming the objection button cuts a loud sting over everyone — disruptive and
+plain annoying. Ordinary dialogue (no shout) is never touched.
+
+**Configuration — `[objection_guard]`:** `enabled` (true), `max_shouts` (3),
+`window_seconds` (10), `exempt_mods` (true).
+
+**Performance:** the `MS` hook reads one field (the shout modifier, field 10) and
+returns instantly for any message with no shout — so normal IC pays a single
+integer compare; the rate check is an O(1) lookup.
+
+**Why optional:** shouts are a fun, normal part of AO — you usually *want* them, so
+a cap is a relief valve for abuse, not a default. (A held shout drops the whole IC
+line it rode in on, since a shout and its message are one packet — so only the
+spammy shout messages are dropped, never plain dialogue.)
+
+---
+
+### Allowlist (whitelist server)
+
+**Compiled:** `Windows/allowlist.dll` · `Linux/allowlist.so`
+**Source:** `allowlist.c3`
+
+Turns the server invite-only: while enabled, **only pre-approved IPIDs** may join;
+everyone else is turned away with a friendly (non-ban) notice. For private
+communities, members-only servers, or locking down during a raid.
+
+> **⚠️ `enabled` defaults to FALSE.** Build your list first (run normally,
+> `/allow <uid>` your regulars, or paste IPIDs into `config/allowlist.txt`) — then
+> enable. Turning it on with an empty list locks out everyone, including you.
+
+**Commands** (BAN perm): `/allow <uid>`, `/unallow <ipid>`, `/allowlist`.
+**Config — `[allowlist]`:** `enabled` (false), `message`.
+
+**Performance:** the gate runs once per *join* (not per packet) — a quick linear
+scan, microseconds at human join rates. Nothing runs on the chat path. Complements
+`lockdown` (auto-learned, temporary) and core `/ban`.
+
+**Why optional:** most servers want to be open; a whitelist is a deliberate policy.
+
+---
+
+### VPN / Proxy Scorer
+
+**Compiled:** `Windows/vpn_scorer.dll` · `Linux/vpn_scorer.so`
+**Source:** `vpn_scorer.c3`
+
+Flags connections from known **VPN / proxy / datacenter** ranges and quietly tells
+staff — **without blocking anyone**. Same shape as `tor_blocker` (a v4 connection
+filter against downloaded IP-range lists), but it never closes the socket: it
+records a hit and posts a coalesced staff alert. Know who's on a VPN, then decide
+case-by-case instead of bluntly turning everyone away.
+
+It downloads public range lists with `curl` on a background thread (default: the
+public-domain [X4BNet VPN list](https://github.com/X4BNet/lists_vpn) — no key),
+caches them, and refreshes on a timer. Add more feeds (datacenter/proxy/abuse)
+with `feed <url>` lines in `config/vpn_scorer.txt`.
+
+**Commands** (BAN perm): `/vpnstatus`, `/vpnreload`, `/vpnlog`, `/vpnallow <ip|cidr>`.
+**Config — `config/vpn_scorer.txt`:** `feed`, `allow`, `flag`, `alerts` (true),
+`alert_permission`, `alert_interval_sec`, `score_unknown`, `auto_update`,
+`update_interval_hours`.
+
+**Performance (the "shit ton of databases, no degradation" part):** every
+connection is an O(log n) binary search over sorted ranges — a handful of compares
+even across hundreds of thousands of ranges — and **always allows** the
+connection. Downloads and the coalesced, timer-driven alerts run on the background
+thread; nothing heavy ever touches the accept path.
+
+**Why optional:** a VPN is information, not a verdict — lots of legitimate people
+use them. This surfaces it to staff without acting; pair with the real tools
+(`/ban`, `ip_guard`, `tor_blocker`) when there's actual abuse. Expect false
+positives; use `allow` for known-good addresses.
+
+**Limits:** 300,000 downloaded ranges, 4,096 manual `flag`, 4,096 `allow`, 8 feeds,
+64-entry recent-flag log.
+
+---
+
+### Funbox
+
+**Compiled:** `Windows/funbox.dll` · `Linux/funbox.so`
+**Source:** `funbox.c3`
+
+A little box of casual randomisers: `/coinflip`, `/8ball <question>`,
+`/choose a | b | c`, `/draw` (a card from a 52-card deck). Results broadcast to the
+area.
+
+**Performance:** registers four commands and **no packet hooks** — it does nothing
+until a command is typed, never touching the chat path. Results are built
+allocation-free.
+
+**Why optional:** gameplay toys, not protocol — a pure courtroom or serious-RP
+server doesn't want `/8ball` noise; a social/game server loves it.
+
+---
+
+### Tabletop
+
+**Compiled:** `Windows/tabletop.dll` · `Linux/tabletop.so`
+**Source:** `tabletop.c3`
+
+DnD / tabletop helpers that build on `roll`: a per-area **initiative tracker**
+(`/initadd <name> [value]`, `/init`, `/next`, `/initremove`, `/initclear`),
+ability-score generation (`/statroll` — 4d6 drop lowest ×6), and
+advantage/disadvantage d20s (`/adv [mod]`, `/dis [mod]`). All shown to the area.
+
+**Performance:** **commands only, no packet hooks** — zero passive cost. Pair with
+`roll` for general dice.
+
+**Why optional:** like `roll`, only a tabletop/DnD server wants these.
+
+**Limits:** 24 combatants per encounter.
+
+---
+
+### Character Popularity
+
+**Compiled:** `Windows/char_popularity.dll` · `Linux/char_popularity.so`
+**Source:** `char_popularity.c3`
+
+Tracks which characters get used most and shows a leaderboard: `/charpop [N]`. A
+character scores one point each time someone switches *to* it. Counts persist
+across clean restarts in `config/char_popularity.txt`.
+
+**Performance:** **no packet hooks.** It rides the core's lifecycle UPDATE event
+and only does work on a genuine character change (it diffs each player's last
+character, so the per-OOC-line firing of UPDATE costs a single string compare).
+
+**Why optional:** a vanity stat — lovely for a community server, and some
+communities would rather not tally behaviour at all.
+
+---
+
+### Word Cloud
+
+**Compiled:** `Windows/word_cloud.dll` · `Linux/word_cloud.so`
+**Source:** `word_cloud.c3`
+
+Counts the words people actually use and shows the most common ones: `/wordcloud
+[N]`. Filler words and very short words are ignored. Session-only (resets on
+restart); stores only word→count totals, never who said what.
+
+**Configuration — `[word_cloud]`:** `enabled` (true), `min_length` (4),
+`track_ic` (true), `track_ooc` (true).
+
+**Performance:** the only plugin in this set that does any per-message work, and
+it's deliberately tiny — a bounded tokenise (a few dozen words max per line) plus a
+small-table increment, microseconds per message at AO's turn-based chat rates.
+
+**Why optional:** a novelty, and counting what people type is a privacy choice some
+servers won't want — tell your players if you run it.
+
+---
+
+### Perf Stats
+
+**Compiled:** `Windows/perf_stats.dll` · `Linux/perf_stats.so`
+**Source:** `perf_stats.c3`
+
+An operator health readout: `/perf` shows uptime, players (now / peak), area count,
+and process memory (working set on Windows, RSS on Linux; omitted if the OS read
+fails).
+
+**Performance:** one command plus a lifecycle hook that updates a peak counter on
+join (a single integer compare). **No packet hooks**; memory is read from the OS
+on demand when you type `/perf`, never in a loop.
+
+**Why optional:** stats are handy on a server you operate and clutter on one you
+don't.
+
+---
+
 > **Note on `/reload`:** the plugins that spawn a background thread
-> (`tor_blocker`, `discord_modcall`, `discord_relay`, `status_feed`, and
-> `slowmode` in queue mode) share the same small `/reload` caveat as the existing
+> (`tor_blocker`, `vpn_scorer`, `discord_modcall`, `discord_relay`, `status_feed`,
+> and `slowmode` in queue mode) share the same small `/reload` caveat as the existing
 > `server_advertiser` / `ip_guard` plugins — a hot-reload can briefly race the
 > background thread as the library is unloaded. A full server restart is the clean
 > way to update those; `/reload` is fine for the command/hook-only plugins.
