@@ -30,6 +30,7 @@ module whisker::plugin;
 
 import whisker::client;
 import whisker::protocol;
+import whisker::plugin_services;
 import std::io;
 
 // ============================================================
@@ -325,6 +326,84 @@ alias ApiRegisterOutboundFilterFn = fn void(ApiOutboundMsgFilter);
 alias ApiClientGetHdidFn          = fn String(void*);
 alias ApiAreaSetHpFn              = fn void(int, int, int);
 
+// -- Area rename, hidden toggle, pair read, real ban, evidence API, IC posting
+//    + IC filter, KV store, event bus (v8) --
+//
+// SAME append-only ABI rule: every field below is added at the very end of
+// PluginAPI (after area_set_hp), so plugins compiled against v1–v7 stop reading
+// at area_set_hp and never touch these — they keep working with no recompile.
+//
+//   area_set_name      : rename an area in core state. NOTE: area names only go
+//                        out in the SM list at handshake, so this persists for
+//                        NEW joiners but does not live-rename clients already
+//                        connected (the inverse of area_set_hp). Document the
+//                        caveat in any "scene title" plugin.
+//   client_set_hidden  : set/clear the SHADOW visibility marker that
+//                        client_is_hidden reports and player lists honour. It is
+//                        a visibility flag ONLY — it grants no moderator
+//                        capability (nothing in core gates an action on SHADOW).
+//   client_get_pair    : the client's persistent pair partner UID
+//                        (force_pair_uid), or config::NO_PAIR (-1) if unpaired.
+//   client_ban         : a REAL ban (not just a kick) — adds the client's
+//                        IPID+HDID to the core ban list for `duration_sec`
+//                        seconds (0 = permanent), sends KB, and disconnects.
+//   area_*_evidence    : add / edit / remove / count / read the area evidence
+//                        list and rebroadcast LE. get_evidence writes a field
+//                        (0=name, 1=description, 2=image) into a caller buffer
+//                        and returns its length, or -1 if the id is out of range
+//                        (caller-buffer = no temp-allocator lifetime issue).
+//   area_post_ic       : the server authors an IC (MS) line into an area as a
+//                        character — for narrators, macros, testimony replay —
+//                        WITHOUT consuming + rebuilding a player's packet (so no
+//                        pairing is lost). Like the TI timer packet, client
+//                        rendering of a server-authored MS is best-effort; the
+//                        OOC path (broadcast_area_msg) is the always-works
+//                        fallback.
+//   register_ic_filter : transform the IC message text (MS field 4) of every
+//                        relayed line before broadcast, rewriting ONLY that
+//                        field so all pairing fields survive — the lossless
+//                        censor / translate primitive the v7 outbound filter
+//                        (OOC only) could not provide. Same contract: write into
+//                        `out`, return the length or < 0 to pass through; must be
+//                        allocation-free.
+//   kv_set/get/delete  : a shared persistent string store (economy, profiles,
+//                        streaks) so plugins stop hand-rolling file I/O. kv_get
+//                        writes into a caller buffer and returns its length (or
+//                        -1 if absent). Survives /reload.
+//   emit_event +
+//   register_event_listener : synchronous inter-plugin pub/sub for composition.
+//                        A listener runs inside emit_event on the caller's
+//                        thread, so the payload is valid for the call. Cleared on
+//                        /reload.
+alias ApiAreaSetNameFn           = fn void(int, String);
+alias ApiClientSetHiddenFn       = fn void(void*, bool);
+alias ApiClientGetPairFn         = fn int(void*);
+alias ApiClientBanFn             = fn void(void*, String, int);
+alias ApiAreaAddEvidenceFn       = fn void(int, String, String, String);
+alias ApiAreaEditEvidenceFn      = fn void(int, int, String, String, String);
+alias ApiAreaRemoveEvidenceFn    = fn void(int, int);
+alias ApiAreaEvidenceCountFn     = fn int(int);
+alias ApiAreaGetEvidenceFn       = fn int(int, int, int, char*, int);
+alias ApiAreaPostIcFn            = fn void(int, String, String, String, String);
+alias ApiIcMsgFilter             = fn int(void*, String, char*, int);
+alias ApiRegisterIcFilterFn      = fn void(ApiIcMsgFilter);
+alias ApiKvSetFn                 = fn void(String, String);
+alias ApiKvGetFn                 = fn int(String, char*, int);
+alias ApiKvDeleteFn              = fn void(String);
+alias ApiEventListener           = fn void(String, String);
+alias ApiEmitEventFn             = fn void(String, String);
+alias ApiRegisterEventListenerFn = fn void(ApiEventListener);
+
+//   register_timer     : run a callback every N milliseconds from a single core
+//                        timer thread (started at boot). /reload-safe: the thread
+//                        holds a lock while firing, so a reload's teardown waits
+//                        for any in-flight callback before unloading. The callback
+//                        runs on the timer thread (no plugin/server temp), so it
+//                        MUST be allocation-free or wrap its body in @pool_init,
+//                        and MUST NOT trigger /reload or re-register a timer.
+alias ApiTimerFn                 = fn void();
+alias ApiRegisterTimerFn         = fn void(int, ApiTimerFn);
+
 // ============================================================
 // Plugin API — passed to plugins during init
 // ============================================================
@@ -438,6 +517,30 @@ struct PluginAPI {
     ApiRegisterOutboundFilterFn register_outbound_filter;
     ApiClientGetHdidFn          client_get_hdid;
     ApiAreaSetHpFn              area_set_hp;
+
+    // Appended after the v7 block (v8) — area rename, hidden toggle, pair read,
+    // real ban, the evidence API, server-authored IC, the IC message filter, the
+    // shared KV store, and the event bus. SAME append-only ABI rule: area_set_hp
+    // keeps its exact offset, so plugins compiled against v1–v7 stop reading
+    // there and never touch these. New fields MUST always be added AFTER
+    // register_event_listener — never inserted or reordered.
+    ApiAreaSetNameFn            area_set_name;
+    ApiClientSetHiddenFn        client_set_hidden;
+    ApiClientGetPairFn          client_get_pair;
+    ApiClientBanFn              client_ban;
+    ApiAreaAddEvidenceFn        area_add_evidence;
+    ApiAreaEditEvidenceFn       area_edit_evidence;
+    ApiAreaRemoveEvidenceFn     area_remove_evidence;
+    ApiAreaEvidenceCountFn      area_evidence_count;
+    ApiAreaGetEvidenceFn        area_get_evidence;
+    ApiAreaPostIcFn             area_post_ic;
+    ApiRegisterIcFilterFn       register_ic_filter;
+    ApiKvSetFn                  kv_set;
+    ApiKvGetFn                  kv_get;
+    ApiKvDeleteFn               kv_delete;
+    ApiEmitEventFn              emit_event;
+    ApiRegisterEventListenerFn  register_event_listener;
+    ApiRegisterTimerFn          register_timer;  // current tail — next field goes AFTER this
 }
 
 // ============================================================
@@ -658,9 +761,32 @@ fn void load_single(PluginManager* pm, PluginAPI* api, String path) {
 // Plugin unloading and hot reload
 // ============================================================
 
-// Unload all plugins: call shutdown, close handles, clear registrations.
+// Unload all plugins: clear every callback path, call shutdown, close handles.
+//
+// ORDER MATTERS. Every registry below holds function pointers INTO the plugin
+// libraries, so they must all be emptied BEFORE any dlclose — otherwise a path
+// can fire into freed code. This is critical for the v8 timer: the core timer
+// thread fires every 100ms (proactively), so leaving its registry populated
+// across dlclose reliably crashes (illegal instruction). plugin_services::
+// clear_registrations() clears the timers UNDER their lock, so it also blocks
+// until any in-flight tick finishes. The reactive registries (commands / hooks /
+// lifecycle / conn filters / outbound / IC / events) are cleared here too; their
+// races are narrower (they only fire on client activity) but the same rule is
+// correct. NOTE: a worker thread already INSIDE a plugin handler when a reload
+// begins is a pre-existing, separate race the server does not quiesce — keep
+// reloads to quiet moments, exactly as before.
 fn void unload_all(PluginManager* pm) {
-    // Call shutdown on each loaded plugin
+    // 1. Sever every call-into-plugin path first, while the code is still mapped.
+    pm.command_count        = 0;
+    pm.hook_count           = 0;
+    pm.lifecycle_hook_count = 0;
+    pm.conn_filter_count    = 0;
+    client::clear_outbound_filters();      // v7 outbound filters (in client.c3)
+    plugin_services::clear_registrations(); // v8 timers (locked) + events + IC filters
+
+    // 2. Now it is safe to run each plugin's shutdown — nothing will dispatch
+    //    into them, and they may still call read-only / setter API (e.g. the
+    //    narrator example restores area names here).
     for (int i = 0; i < pm.plugin_count; i++) {
         if (pm.shutdown_fns[i] != null) {
             io::printfn("[plugins] Shutting down: %s", pm.plugins[i].name);
@@ -668,7 +794,7 @@ fn void unload_all(PluginManager* pm) {
         }
     }
 
-    // Close all library handles
+    // 3. Close all library handles.
     for (int i = 0; i < pm.plugin_count; i++) {
         if (pm.handles[i] != null) {
             $if env::WIN32:
@@ -681,17 +807,7 @@ fn void unload_all(PluginManager* pm) {
         pm.shutdown_fns[i] = null;
     }
 
-    // Clear all registrations
-    pm.plugin_count  = 0;
-    pm.command_count = 0;
-    pm.hook_count    = 0;
-    pm.lifecycle_hook_count = 0;
-    pm.conn_filter_count    = 0;
-
-    // Outbound message filters (v7) live in the client module's globals, not the
-    // manager — clear them too so a reload never calls into an unloaded plugin.
-    client::clear_outbound_filters();
-
+    pm.plugin_count = 0;
     io::printn("[plugins] All plugins unloaded.");
 }
 

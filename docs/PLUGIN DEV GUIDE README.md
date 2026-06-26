@@ -2169,6 +2169,163 @@ updates the core's stored bar (not just the live display), a player who joins ri
 afterward is replayed the correct value — the fix for the `penalty_bars` late-joiner
 caveat. It's allocation-free, so it's safe to call from a background thread too.
 
+## What the v8 API Adds — Rename, Hidden, Pair, Ban, Evidence, IC, KV, Events, Timer
+
+v8 appends **17 fields**, closing most of what the old [What Plugins Can't
+Do](#what-plugins-cant-do-yet) section listed and adding three brand-new shared
+mechanisms (a key/value store, an event bus, and a timer scheduler). Append-only as
+always — plugins compiled against v1–v7 never read these and keep working untouched.
+A standalone plugin appends the 17 fields to the end of its struct copy; the full v8
+struct is in `OPTIONAL Plugins/heartbeat.c3` (and `v8_selftest.c3`), and every v8
+example plugin carries it.
+
+| Field | Signature | Purpose |
+|-------|-----------|---------|
+| `area_set_name` | `fn void(int area, String name)` | Rename an area in core state. **Shows for new joiners only** (see caveat). |
+| `client_set_hidden` | `fn void(void*, bool)` | Set/clear the SHADOW visibility marker `client_is_hidden` reports. Visibility only — grants no power. |
+| `client_get_pair` | `fn int(void*)` | The client's persistent pair partner UID, or `-1` (`NO_PAIR`). |
+| `client_ban` | `fn void(void*, String reason, int seconds)` | A **real** ban: adds IPID+HDID to the core ban list (`0` = permanent), sends `KB`, disconnects. |
+| `area_add_evidence` | `fn void(int, String name, String desc, String image)` | Add evidence + rebroadcast `LE`. |
+| `area_edit_evidence` | `fn void(int, int id, String, String, String)` | Edit evidence `id` + rebroadcast. |
+| `area_remove_evidence` | `fn void(int, int id)` | Delete evidence `id` + rebroadcast. |
+| `area_evidence_count` | `fn int(int)` | How many evidence items the area has. |
+| `area_get_evidence` | `fn int(int area, int id, int field, char* out, int max)` | Read a field (`0`=name,`1`=desc,`2`=image) into a caller buffer; returns length or `-1`. |
+| `area_post_ic` | `fn void(int, String char, String showname, String msg, String pos)` | Server authors an IC (`MS`) line — narrator/macros — without disturbing pairing. Best-effort render. |
+| `register_ic_filter` | `fn void(fn int(void*, String, char*, int))` | Rewrite the **IC message text** (MS field 4) of every relayed line, pairing preserved. |
+| `kv_set` | `fn void(String key, String value)` | Store a string in the shared persistent KV store. |
+| `kv_get` | `fn int(String key, char* out, int max)` | Read into a caller buffer; returns length or `-1` if absent. |
+| `kv_delete` | `fn void(String key)` | Remove a key. |
+| `emit_event` | `fn void(String name, String payload)` | Publish an event to every listener (synchronous). |
+| `register_event_listener` | `fn void(fn void(String, String))` | Subscribe to events. |
+| `register_timer` | `fn void(int interval_ms, fn void())` | Run a callback every N ms from the core timer thread. |
+
+### Rename, hidden, pair, ban
+
+```c3
+api.area_set_name(area, stable_name);  // see lifetime caveat below
+api.client_set_hidden(c, true);        // hide from player lists (no power granted)
+int partner_uid = api.client_get_pair(c);          // -1 if unpaired
+api.client_ban(target, "ban evasion", 3600);       // real 1-hour ban; 0 = permanent
+```
+
+- **`area_set_name` stores the slice BY REFERENCE** (like `area_set_background` and
+  the status tag) and the area list only ships in the `SM` packet at handshake. So:
+  back the name with memory that outlives the call (a static buffer or string
+  literal), **restore the original on shutdown** so it never dangles after `/reload`,
+  and know the rename shows for players who join *afterward*, not ones already
+  connected. The `narrator` plugin's `/scene` does all three.
+- **`client_set_hidden`** flips the SHADOW marker only; nothing in core gates an
+  action on it, so a hidden player gains no moderator capability.
+
+### The evidence API
+
+`area_add_evidence` / `area_edit_evidence` store the name/desc/image **by reference**,
+exactly like the core's own `PE` handler — so pass strings that outlive the call
+(copy user input into a stable buffer first; the `evidence_locker` plugin keeps a
+small ring of buffers). `area_get_evidence` writes into *your* buffer, so what you
+read has no lifetime tied to the server.
+
+```c3
+api.area_add_evidence(area, stable_name, stable_desc, stable_img);  // + rebroadcasts LE
+int n = api.area_evidence_count(area);
+char[256] buf;
+int len = api.area_get_evidence(area, 0, 0, &buf[0], 256);   // field 0 = name
+```
+
+### Posting IC and filtering IC text
+
+`area_post_ic` lets the *server* speak a line in-character (a narrator, a replayed
+testimony) without consuming + rebuilding a player's packet, so no pairing is lost.
+Like any server-authored `MS` its on-screen rendering is **best-effort** (give an OOC
+fallback, as `narrator` does). `register_ic_filter` is the lossless counterpart to the
+v7 outbound filter, but for **IC chat**: it rewrites only MS field 4 (the message
+text) before broadcast, leaving every pairing/emote/shout field intact — the thing a
+consume+rebuild hook could never do. Same contract as the outbound filter:
+allocation-free, return `<0` to pass through, cleared on `/reload`.
+
+```c3
+// uwu-ify opted-in players' IC text (the `uwu_mode` plugin). Allocation-free.
+fn int uwu_filter(void* c, String input, char* out, int max) {
+    if (!is_opted(api.client_get_uid(c))) return -1;     // unchanged
+    int o = 0;
+    for (usz i = 0; i < input.len && o < max; i++) {
+        char ch = input[i];
+        out[o] = (ch == 'r' || ch == 'l') ? 'w' : ch; o++;
+    }
+    return o;
+}
+api.register_ic_filter(&uwu_filter);
+```
+
+### The shared KV store
+
+A tiny persistent string database every plugin can share (economy balances,
+profiles, streaks) instead of each hand-rolling file I/O. It lives in
+`config/plugin_kv.txt`, **persists across `/reload`** (it's data, not a hook), and —
+because reads copy into your buffer — has the same lifetime-safe contract as
+`args_split` / `to_lower`. Keys may not contain `=` or newlines; values are
+single-line and capped (512 bytes). It is **thread-safe** (mutex-guarded, so the
+per-client worker threads can all read and write it), but it rewrites the whole file
+on every `kv_set` — fine for AO-volume updates, but batch in memory if you need a very
+high write rate.
+
+```c3
+api.kv_set("coins:1.2.3.4", "150");
+char[32] b;
+int n = api.kv_get("coins:1.2.3.4", &b[0], 32);   // n = bytes, or -1 if absent
+api.kv_delete("coins:1.2.3.4");
+```
+
+### The event bus — plugins composing
+
+`emit_event` fans a `(name, payload)` out to every `register_event_listener` callback
+**synchronously**, on the caller's thread, so the payload is valid for the call (like
+a packet hook's pointer). It lets independent plugins cooperate without importing each
+other — load either alone and it still works. Listeners are cleared on `/reload`.
+
+```c3
+// Emitter (coin_economy): announce a milestone.
+api.emit_event("coin.milestone", "Phoenix:100");
+
+// Listener (hype_bot), a SEPARATE plugin:
+fn void on_event(String name, String payload) {
+    if (name != "coin.milestone") return;
+    @pool_init(mem, 64 * 1024) { api.broadcast_all_msg(/* ...parse + congratulate... */); };
+}
+api.register_event_listener(&on_event);
+```
+
+### The timer scheduler
+
+`register_timer` runs a callback every `interval_ms` from a **single core timer
+thread** started at boot — no plugin-spawned thread, and **`/reload`-safe**: the
+scheduler holds a lock while firing, and the unloader clears the registry under that
+same lock *before* closing any library, so a reload waits for any in-flight tick and
+never calls into unloaded code. Two rules for your callback:
+
+1. It runs on the timer thread, which is core-spawned — so the **core** sets up its
+   own temp allocator there, but your plugin's temp is still yours: wrap any
+   allocating work (`tformat`, `broadcast`, `dstring`) in `@pool_init`, exactly as in
+   a hook. (A plugin `.dll` and the server `.exe` link separate runtimes with
+   separate temp allocators — this catches everyone once.)
+2. Do **not** trigger `/reload` or call `register_timer` from inside the callback —
+   it runs under a non-recursive lock, so that deadlocks.
+
+```c3
+fn void on_tick() {
+    @pool_init(mem, 64 * 1024) {              // required: allocating on a core thread
+        api.broadcast_all_msg("Server heartbeat — still here!");
+    };
+}
+// in whisker_plugin_init:
+api.register_timer(3000, &on_tick);            // every 3 seconds
+```
+
+The `heartbeat` plugin is the reference. **Verifying the ABI yourself:** drop
+`v8_selftest` in `plugins/`, start the server, and read the console — it round-trips
+the rename / evidence / KV / event-bus calls and prints `PASS`/`FAIL` for each, so a
+misaligned struct copy is caught immediately instead of silently returning garbage.
+
 ## Hookable Packet Headers
 
 These are the AO2 packet headers the server processes. You can hook any
@@ -2288,20 +2445,21 @@ movement.
 
 ## What Plugins Can't Do (yet)
 
-The API keeps growing — several former limits were closed by
-[v7](#what-the-v7-api-adds--enumeration-outbound-filter-hdid-hp-setter): outbound
-server-message rewriting (`register_outbound_filter`), plugin enumeration
-(`get_plugin_count`/`_name`/`_version`), reading the HDID (`client_get_hdid`), and
-setting a penalty bar in core state (`area_set_hp`). What's still missing:
+The API keeps growing, and [v8](#what-the-v8-api-adds--rename-hidden-pair-ban-evidence-ic-kv-events-timer)
+closed most of what used to be on this list: a **real ban** (`client_ban`), the
+**area-rename setter** (`area_set_name`), and **IC chat rewriting** (`register_ic_filter`)
+are all here now, on top of v7's outbound filter, enumeration, HDID, and HP setter.
+What's still missing:
 
-- **No hook on IC/OOC *chat*.** v7's outbound filter covers the server's own OOC
-  notices, not the chat broadcast path — you still can't rewrite another player's
-  delivered line except by consuming + rebuilding it (see the packet-rewrite note
-  above).
-- **No real ban primitive.** You get `client_kick` / `client_kick_msg` (and can
-  remember an IPID to re-kick on rejoin), but not a true ban — pair with core
-  `/ban`.
-- **No area-rename setter.** `area_get_name` exists; there's no `area_set_name` yet.
+- **No hook on OOC *chat*.** You can rewrite IC text (`register_ic_filter`) and the
+  server's own OOC notices (`register_outbound_filter`), but a player's delivered
+  **OOC** line still has no filter — rewrite it only by consuming + rebuilding the
+  `CT` (see the packet-rewrite note above).
+- **No account / auth API.** You can read whether a client is a mod
+  (`client_is_mod`) and ban/kick/mute, but creating accounts or roles is console-only.
+- **No per-plugin config framework.** The shared KV store (`kv_*`) covers simple
+  persistent values; for structured config each plugin still reads its own file
+  (see the `casing` / `terse_mode` examples).
 
 These are candidates for future append-only API additions — open an issue if one
 blocks something you're building.

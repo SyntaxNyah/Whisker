@@ -19,6 +19,7 @@ import whisker::websocket;
 import whisker::console;
 import whisker::moderation;
 import whisker::commands;
+import whisker::plugin_services;
 import std::io;
 import std::net::tcp;
 import std::time;
@@ -202,6 +203,14 @@ fn Server*? init(String config_dir) {
 
     // Build the plugin API with all server helpers
     srv.plugin_api = build_plugin_api(srv);
+
+    // Initialise the v8 plugin KV store from <config>/plugin_kv.txt before
+    // plugins load, so a plugin can read persisted state during its own init.
+    plugin_services::init(config_dir);
+
+    // Start the single v8 timer thread before plugins load, so register_timer is
+    // available during plugin init and its mutex is ready.
+    plugin_services::start_timers();
 
     // Resolve plugin directory relative to project root (same as config).
     // config_dir is already resolved relative to the binary (e.g. "./out/../config"),
@@ -1177,6 +1186,158 @@ fn int _api_to_lower(String input, char* out, int max) {
 }
 
 // ============================================================
+// v8 wrappers — area rename, hidden toggle, pair read, real ban,
+// evidence API, server-authored IC, IC filter, KV store, event bus
+// ============================================================
+
+// Rename an area in core state. The area list only ships in the SM packet at
+// handshake, so this shows for NEW joiners but does not live-rename clients that
+// are already connected (the inverse of area_set_hp). Documented as such.
+fn void _api_area_set_name(int area_id, String name) {
+    if (area_id < 0 || area_id >= _plugin_srv.area_count) return;
+    _plugin_srv.areas[area_id].name = name;
+}
+
+// Set/clear the SHADOW visibility marker that client_is_hidden reports and that
+// player-list plugins honour. SHADOW (bit 7) gates no action anywhere in core,
+// so this is a pure visibility flag — it grants no moderator capability.
+fn void _api_client_set_hidden(void* c, bool hidden) {
+    if (c == null) return;
+    client::Client* cl = (client::Client*)c;
+    if (hidden) {
+        cl.permissions |= commands::PERM_SHADOW;
+    } else {
+        cl.permissions &= ~commands::PERM_SHADOW;
+    }
+}
+
+// The client's persistent pair partner UID, or config::NO_PAIR (-1) if unpaired.
+// Returns force_pair_uid (the durable pairing) rather than the area-resolved
+// partner, so a ship-meter sees the relationship even across areas.
+fn int _api_client_get_pair(void* c) {
+    if (c == null) return config::NO_PAIR;
+    return ((client::Client*)c).force_pair_uid;
+}
+
+// A REAL ban (not just a kick): adds the client's IPID+HDID to the core ban list
+// for `duration_sec` seconds (0 = permanent), sends KB, and disconnects. Call
+// from command/hook context (it builds a KB packet via the server temp).
+fn void _api_client_ban(void* c, String reason, int duration_sec) {
+    if (c == null) return;
+    client::Client* t = (client::Client*)c;
+    _plugin_srv.ban_list.add(t.ipid, t.hdid, reason, (long)duration_sec);
+    t.send_raw(protocol::build("KB", { reason }));
+    t.connected = false;
+}
+
+// Rebroadcast the area's evidence list (LE) after a change. Uses the area's own
+// builder (dstring::temp) — call the evidence wrappers from command/hook context
+// (server temp), the same constraint as area_set_background.
+fn void _broadcast_evidence(int area_id) {
+    broadcast_area(_plugin_srv, area_id, _plugin_srv.areas[area_id].build_evidence_packet());
+}
+
+fn void _api_area_add_evidence(int area_id, String name, String desc, String image) {
+    if (area_id < 0 || area_id >= _plugin_srv.area_count) return;
+    _plugin_srv.areas[area_id].add_evidence(name, desc, image);
+    _broadcast_evidence(area_id);
+}
+
+fn void _api_area_edit_evidence(int area_id, int id, String name, String desc, String image) {
+    if (area_id < 0 || area_id >= _plugin_srv.area_count) return;
+    _plugin_srv.areas[area_id].edit_evidence(id, name, desc, image);
+    _broadcast_evidence(area_id);
+}
+
+fn void _api_area_remove_evidence(int area_id, int id) {
+    if (area_id < 0 || area_id >= _plugin_srv.area_count) return;
+    _plugin_srv.areas[area_id].delete_evidence(id);
+    _broadcast_evidence(area_id);
+}
+
+fn int _api_area_evidence_count(int area_id) {
+    if (area_id < 0 || area_id >= _plugin_srv.area_count) return 0;
+    return _plugin_srv.areas[area_id].evidence_count;
+}
+
+// Read one field of one evidence item (0=name, 1=description, 2=image) into the
+// caller's buffer; returns bytes written, or -1 if the area/id/field is invalid.
+// Caller-buffer = no temp-allocator lifetime crossing the dlopen boundary.
+fn int _api_area_get_evidence(int area_id, int id, int field, char* out, int max) {
+    if (out == null || max <= 0) return -1;
+    if (area_id < 0 || area_id >= _plugin_srv.area_count) return -1;
+    area::Area* a = &_plugin_srv.areas[area_id];
+    if (id < 0 || id >= a.evidence_count) return -1;
+    String src;
+    switch (field) {
+        case 0: src = a.evidence[id].name;
+        case 1: src = a.evidence[id].description;
+        case 2: src = a.evidence[id].image;
+        default: return -1;
+    }
+    int n = src.len < (usz)max ? (int)src.len : max;
+    for (int i = 0; i < n; i++) out[i] = src[i];
+    return n;
+}
+
+// The server authors an IC (MS) line into an area as a character, WITHOUT
+// consuming + rebuilding a player's packet (so no pairing is lost). Field layout
+// matches the relay this server emits for a real minimal message (fields 0-21),
+// char_id = -1 (narrator). Like the TI timer packet, client rendering of a
+// server-authored MS is best-effort and unverified against a live client; the
+// OOC path (broadcast_area_msg) is the always-works fallback.
+fn void _api_area_post_ic(int area_id, String char_name, String showname, String message, String position) {
+    if (area_id < 0 || area_id >= _plugin_srv.area_count) return;
+    String pos = position.len > 0 ? position : "wit";
+
+    DString out = dstring::temp();
+    out.append_string("MS");
+    out.append_char('#'); out.append_string("1");                               // 0  deskmod
+    out.append_char('#'); out.append_string("-");                               // 1  preanim
+    out.append_char('#'); out.append_string(protocol::escape_value(char_name)); // 2  character
+    out.append_char('#'); out.append_string("-");                               // 3  emote
+    out.append_char('#'); out.append_string(protocol::escape_value(message));   // 4  message
+    out.append_char('#'); out.append_string(protocol::escape_value(pos));       // 5  side
+    out.append_char('#'); out.append_string("0");                               // 6  sfx
+    out.append_char('#'); out.append_string("0");                               // 7  emote_mod
+    out.append_char('#'); out.append_string("-1");                              // 8  char_id (narrator)
+    out.append_char('#'); out.append_string("0");                               // 9  sfx_delay
+    out.append_char('#'); out.append_string("0");                               // 10 shout
+    out.append_char('#'); out.append_string("0");                               // 11 evidence
+    out.append_char('#'); out.append_string("0");                               // 12 flip
+    out.append_char('#'); out.append_string("0");                               // 13 realization
+    out.append_char('#'); out.append_string("0");                               // 14 text_color
+    out.append_char('#'); out.append_string(protocol::escape_value(showname));  // 15 showname
+    out.append_char('#'); out.append_string("-1");                              // 16 other_charid
+    out.append_char('#');                                                       // 17 other_name (empty)
+    out.append_char('#');                                                       // 18 other_emote (empty)
+    out.append_char('#'); out.append_string("0&0");                             // 19 self_offset
+    out.append_char('#'); out.append_string("0&0");                             // 20 other_offset
+    out.append_char('#'); out.append_string("0");                               // 21 other_flip
+    out.append_string(config::PACKET_TERMINATOR);
+    broadcast_area(_plugin_srv, area_id, out.str_view());
+}
+
+// IC filter / KV store / event bus — thin forwards to plugin_services. The cast
+// matches the v7 outbound-filter pattern: the alias types are structurally
+// identical fn pointers.
+fn void _api_register_ic_filter(plugin::ApiIcMsgFilter f) {
+    plugin_services::register_ic_filter((plugin_services::IcFilterFn)f);
+}
+
+fn void _api_kv_set(String key, String value)      { plugin_services::kv_set(key, value); }
+fn int  _api_kv_get(String key, char* out, int max) { return plugin_services::kv_get(key, out, max); }
+fn void _api_kv_delete(String key)                 { plugin_services::kv_delete(key); }
+
+fn void _api_emit_event(String name, String payload) { plugin_services::emit_event(name, payload); }
+fn void _api_register_event_listener(plugin::ApiEventListener f) {
+    plugin_services::register_event_listener((plugin_services::EventListenerFn)f);
+}
+fn void _api_register_timer(int interval_ms, plugin::ApiTimerFn f) {
+    plugin_services::register_timer(interval_ms, (plugin_services::TimerFn)f);
+}
+
+// ============================================================
 // Build the fully populated PluginAPI
 // ============================================================
 
@@ -1257,6 +1418,26 @@ fn plugin::PluginAPI build_plugin_api(Server* srv) {
         .register_outbound_filter = &_api_register_outbound_filter,
         .client_get_hdid         = &_api_client_get_hdid,
         .area_set_hp             = &_api_area_set_hp,
+
+        // Area rename + hidden toggle + pair read + real ban + evidence API +
+        // server-authored IC + IC filter + KV store + event bus (v8)
+        .area_set_name           = &_api_area_set_name,
+        .client_set_hidden       = &_api_client_set_hidden,
+        .client_get_pair         = &_api_client_get_pair,
+        .client_ban              = &_api_client_ban,
+        .area_add_evidence       = &_api_area_add_evidence,
+        .area_edit_evidence      = &_api_area_edit_evidence,
+        .area_remove_evidence    = &_api_area_remove_evidence,
+        .area_evidence_count     = &_api_area_evidence_count,
+        .area_get_evidence       = &_api_area_get_evidence,
+        .area_post_ic            = &_api_area_post_ic,
+        .register_ic_filter      = &_api_register_ic_filter,
+        .kv_set                  = &_api_kv_set,
+        .kv_get                  = &_api_kv_get,
+        .kv_delete               = &_api_kv_delete,
+        .emit_event              = &_api_emit_event,
+        .register_event_listener = &_api_register_event_listener,
+        .register_timer          = &_api_register_timer,
     };
 }
 

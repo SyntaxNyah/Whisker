@@ -17,6 +17,7 @@ import whisker::area;
 import whisker::pairing;
 import whisker::commands;
 import whisker::security;
+import whisker::plugin_services;
 import std::io;
 
 // ============================================================
@@ -261,6 +262,17 @@ fn void handle_ms(server::Server* srv, client::Client* c, protocol::Packet* pkt)
         message = message[0..config::MAX_IC_MESSAGE_LEN - 1];
     }
 
+    // v8: let plugins rewrite ONLY the IC message text (field 4) before the
+    // relay is built below, so every pairing field is preserved (lossless
+    // censor / translate, unlike consume + rebuild). run_ic_filters returns -1
+    // when no filter is registered or all decline, in which case we fall back to
+    // the original field verbatim — so behaviour is byte-for-byte unchanged for
+    // servers without an IC-filter plugin.
+    char[1024] ic_buf;
+    int    ic_n        = plugin_services::run_ic_filters((void*)c, message, &ic_buf[0], 1024);
+    bool   ic_filtered = ic_n >= 0;
+    String ic_message  = ic_n > 0 ? (String)ic_buf[0..ic_n - 1] : "";
+
     // === Pairing logic ===
     // Resolve pair partner (persistent UID-based pairing)
     client::Client* pair_partner = pairing::resolve_pair(c, &srv.clients, srv.client_count);
@@ -285,11 +297,17 @@ fn void handle_ms(server::Server* srv, client::Client* c, protocol::Packet* pkt)
     DString out = dstring::temp();
     out.append_string("MS");
 
-    // Forward fields 0-15 as-is (up to showname)
+    // Forward fields 0-15 as-is (up to showname), except field 4 (the IC
+    // message) when a v8 IC filter rewrote it — everything else, including all
+    // the pairing fields below, is untouched.
     usz forward_limit = pkt.field_count < 16 ? pkt.field_count : 16;
     for (usz i = 0; i < forward_limit; i++) {
         out.append_char('#');
-        out.append_string(protocol::escape_value(pkt.fields[i]));
+        if (i == 4 && ic_filtered) {
+            out.append_string(protocol::escape_value(ic_message));
+        } else {
+            out.append_string(protocol::escape_value(pkt.fields[i]));
+        }
     }
 
     // Field 16: other_charid — inject pair partner's char_id
